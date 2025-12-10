@@ -3,910 +3,1098 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Vault Heist — Single File 3D Heist Game</title>
+<title>Vault Heist — Part1 (Scene & Controls)</title>
 
-<!-- External libraries via CDN -->
+<!-- External libraries (CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/PointerLockControls.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
 
 <style>
-  /* --- Reset & base --- */
-  html,body { height:100%; margin:0; padding:0; font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; background:#0f0f12; color:#eaeaea; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
-  #gameWrap { position:fixed; inset:0; display:flex; flex-direction:column; }
-  header { height:56px; background:linear-gradient(90deg,#111,#222); display:flex; align-items:center; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.6); z-index:50; }
-  header h1 { margin:0; font-size:18px; letter-spacing:0.6px; font-weight:700; }
-  header .hud { margin-left:auto; display:flex; gap:8px; align-items:center; }
-  .btn { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.04); padding:6px 10px; border-radius:8px; color:inherit; cursor:pointer; }
-  .btn:hover { background:rgba(255,255,255,0.09); }
+  /* === 基本レイアウト（Part1） === */
+  html,body{height:100%;margin:0;padding:0;background:#071021;color:#eaeaea;font-family:system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  header{height:56px;background:linear-gradient(90deg,#0e1113,#131316);display:flex;align-items:center;padding:8px 14px;z-index:30}
+  header h1{margin:0;font-size:16px}
+  #topControls{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:10px;color:inherit;cursor:pointer}
+  .btn:active{transform:translateY(1px)}
 
-  /* --- Canvas area (3D) --- */
-  #sceneContainer { flex:1; position:relative; overflow:hidden; display:flex; }
-  canvas#main3d { width:100%; height:100%; display:block; background:linear-gradient(#7aa,#0b1530); }
+  /* canvas がフルスクリーンで常に正しい比率になるようにする */
+  #sceneWrap{flex:1;position:relative;overflow:hidden}
+  canvas#main3d{display:block;width:100%;height:100%}
 
-  /* --- UI overlay --- */
-  .overlay {
-    position:absolute; right:12px; top:72px; width:260px; max-width:40vw; z-index:60;
-    background:linear-gradient(180deg, rgba(12,14,20,0.8), rgba(10,10,12,0.6));
-    border-radius:12px; padding:12px; box-shadow:0 8px 30px rgba(0,0,0,0.6);
-    backdrop-filter: blur(4px); border:1px solid rgba(255,255,255,0.03);
-  }
-  .overlay h2 { margin:0 0 8px 0; font-size:14px; }
-  .statRow { display:flex; justify-content:space-between; margin:6px 0; font-size:13px; }
+  /* ミニマップ、HUD の基本枠 */
+  #hud{position:absolute;right:14px;top:84px;width:260px;background:rgba(6,8,12,0.6);border-radius:12px;padding:12px;backdrop-filter:blur(4px);z-index:50;border:1px solid rgba(255,255,255,0.03)}
+  #minimap{position:absolute;left:14px;top:84px;width:160px;height:160px;background:rgba(0,0,0,0.35);border-radius:8px;padding:8px;z-index:50}
 
-  /* --- Minimap --- */
-  #minimap {
-    position:absolute; left:12px; top:72px; width:180px; height:180px; z-index:60;
-    background:rgba(0,0,0,0.5); border-radius:8px; padding:6px; box-sizing:border-box;
-    border:1px solid rgba(255,255,255,0.03);
-  }
-  #minimap canvas { width:100%; height:100%; display:block; border-radius:6px; }
+  /* モバイル用スティックのプレースホルダ（Part1では仮実装） */
+  #controls{position:absolute;left:14px;bottom:16px;display:flex;gap:12px;align-items:flex-end;z-index:60}
+  .joystick{width:120px;height:120px;border-radius:50%;background:rgba(0,0,0,0.18);display:flex;align-items:center;justify-content:center}
+  .stick{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.06)}
 
-  /* --- Bottom Controls (joystick / actions) --- */
-  #controls {
-    position:absolute; left:12px; bottom:12px; z-index:70; display:flex; gap:12px; align-items:flex-end;
-  }
-  .joystick {
-    width:140px; height:140px; background:rgba(0,0,0,0.35); border-radius:50%; display:flex; align-items:center; justify-content:center;
-    touch-action:none; position:relative; border:1px solid rgba(255,255,255,0.03);
-  }
-  .joystick .stick { width:64px; height:64px; background:rgba(255,255,255,0.08); border-radius:50%; transform:translate(0,0); transition:background 0.12s; display:flex; align-items:center; justify-content:center; }
-  .actionButtons { display:flex; flex-direction:column; gap:8px; }
-  .actionButtons button { width:72px; height:44px; border-radius:8px; font-weight:700; }
+  /* モーダル（Part2で金庫用を作る） */
+  .modal{display:none}
 
-  /* --- Modal (vault) --- */
-  .modal {
-    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(0.98); z-index:200;
-    background: linear-gradient(180deg,#0b0b0d,#121218); color:#eaeaea; padding:18px; border-radius:14px;
-    border:1px solid rgba(255,255,255,0.04); box-shadow:0 14px 60px rgba(0,0,0,0.6); width:92%; max-width:520px; display:none;
-  }
-  .modal.open { display:block; animation:pop 220ms ease; transform:translate(-50%,-50%) scale(1); }
-  @keyframes pop { from { transform:translate(-50%,-50%) scale(0.96); opacity:0; } to { transform:translate(-50%,-50%) scale(1); opacity:1; } }
-  .modal h3 { margin:0 0 10px 0; }
-  .dialRow { display:flex; gap:8px; justify-content:center; margin-top:12px; }
-  .dial { width:56px; height:56px; border-radius:8px; background:rgba(255,255,255,0.03); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; border:1px solid rgba(255,255,255,0.02); }
-  .dial.correct { box-shadow:0 6px 18px rgba(0,255,150,0.06); background:linear-gradient(90deg,#072,#092); color:#fff; transform:scale(1.08); }
-
-  /* --- Complexity / theme presets --- */
-  #presetBar { display:flex; gap:8px; }
-  .preset { padding:6px 10px; border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,0.03); background:rgba(255,255,255,0.02); }
-  .preset.active { background:linear-gradient(90deg,#ffcc00,#ff8a00); color:#111; font-weight:800; }
-
-  /* --- Notifications --- */
-  #notifs { position:absolute; right:12px; bottom:12px; z-index:150; display:flex; flex-direction:column; gap:8px; width:320px; max-width:60vw; }
-  .toast { background:rgba(14,14,20,0.85); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); color:#eaeaea; font-size:13px; }
-
-  /* --- Responsive tweaks --- */
-  @media (max-width:640px) {
-    header h1 { font-size:16px; }
-    .overlay { width:200px; top:64px; left:auto; right:10px; }
-    #minimap { left:10px; top:64px; width:140px; height:140px; }
-    .joystick { width:120px; height:120px; }
-    .joystick .stick { width:56px; height:56px; }
-  }
-
-  /* --- Flavor: labels on building markers for minimap --- */
-  .legend { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; font-size:12px; }
-  .legend .item { padding:6px; border-radius:6px; background:rgba(255,255,255,0.03); display:flex; gap:6px; align-items:center; }
-  .legend .sw { width:12px; height:12px; border-radius:3px; display:inline-block; }
-
+  /* レスポンシブ */
+  @media(max-width:720px){ #hud{width:180px} #minimap{width:130px;height:130px} }
 </style>
 </head>
 <body>
-<div id="gameWrap">
+<div id="app">
   <header>
-    <h1>Vault Heist — 金庫破り</h1>
-    <div class="hud">
-      <div id="presetBar">
-        <div class="preset" data-preset="trash">普通にゴミ</div>
-        <div class="preset active" data-preset="normal">普通</div>
-        <div class="preset" data-preset="god">普通に神</div>
-      </div>
-      <button class="btn" id="spawnBtn">新しいマップ</button>
-      <button class="btn" id="saveBtn">保存</button>
+    <h1>Vault Heist — Part1: Scene & Controls</h1>
+    <div id="topControls">
+      <button class="btn" id="btnRegenerate">新しいマップ</button>
+      <button class="btn" id="btnSave">保存</button>
     </div>
   </header>
 
-  <div id="sceneContainer">
+  <div id="sceneWrap">
     <canvas id="main3d"></canvas>
 
     <div id="minimap">
-      <canvas id="miniCanvas" width="300" height="300"></canvas>
-      <div style="margin-top:6px; font-size:12px;">ミニマップ</div>
-      <div class="legend">
-        <div class="item"><span class="sw" style="background:#2ecc71"></span> 金庫（銀行）</div>
-        <div class="item"><span class="sw" style="background:#3498db"></span> コンビニ（小金庫）</div>
-        <div class="item"><span class="sw" style="background:#e67e22"></span> パチンコ</div>
-        <div class="item"><span class="sw" style="background:#9b59b6"></span> 店（車/スロ/闇）</div>
-        <div class="item"><span class="sw" style="background:#95a5a6"></span> ダミービル</div>
-      </div>
+      <canvas id="miniCanvas" width="300" height="300" style="width:100%;height:100%"></canvas>
+      <div style="font-size:12px;margin-top:6px;color:#cbd5dc">ミニマップ</div>
     </div>
 
-    <div class="overlay" id="overlayInfo">
-      <h2>Player</h2>
-      <div class="statRow"><span>お金</span><span id="money">¥0</span></div>
-      <div class="statRow"><span>所持銃</span><span id="guns">拳銃:0</span></div>
-      <div class="statRow"><span>車</span><span id="cars">0</span></div>
-      <div class="statRow"><span>警戒度</span><span id="heat">0</span></div>
-      <hr style="border:none;height:1px;background:rgba(255,255,255,0.03);margin:8px 0;">
-      <h2>Map Info</h2>
-      <div class="statRow"><span>サイズ</span><span>600×600</span></div>
-      <div class="statRow"><span>金庫数</span><span id="vaultCount">0</span></div>
-      <div style="margin-top:8px;">
-        <small>金庫はコンビニ(低)・パチンコ(中)・銀行(高)。金庫で手間取ると警察が来ます。</small>
-      </div>
+    <div id="hud">
+      <div style="font-weight:700;margin-bottom:8px">Player</div>
+      <div>お金: <span id="money">¥0</span></div>
+      <div>銃: <span id="guns">0</span></div>
+      <div style="height:8px"></div>
+      <div style="font-weight:700;margin-top:8px">Map Info</div>
+      <div>サイズ: 600×600</div>
+      <div>金庫数: <span id="vaultCount">0</span></div>
     </div>
 
     <div id="controls">
       <div class="joystick" id="joy">
         <div class="stick" id="stick"></div>
       </div>
-      <div class="actionButtons">
-        <button id="interactBtn" class="btn">行動</button>
-        <button id="fireBtn" class="btn">発砲</button>
-        <button id="vaultBtn" class="btn">金庫</button>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn" id="btnInteract">行動</button>
+        <button class="btn" id="btnFire">発砲</button>
+        <button class="btn" id="btnVault">金庫</button>
       </div>
     </div>
-
-    <div id="notifs"></div>
-
-    <div class="modal" id="vaultModal" aria-hidden="true">
-      <h3>金庫ダイヤルを回せ</h3>
-      <div>4桁ダイヤルを合わせろ。正しい数字が1桁でも合うたびに小さな演出が起きる。</div>
-      <div class="dialRow" id="dialRow">
-        <!-- dials go here -->
-      </div>
-      <div style="text-align:center; margin-top:12px;">
-        <button class="btn" id="attemptOpen">解除を試す</button>
-        <button class="btn" id="closeVault">閉じる</button>
-      </div>
-    </div>
-
   </div>
 
-  <footer style="height:48px; background:linear-gradient(90deg,#0b0b0d,#0b0b10); display:flex; align-items:center; justify-content:center; color:#9ea2a6;">
-    <small>スマホ向けコントロール装備。GitHub Pages に置いてそのまま公開可。</small>
-  </footer>
+  <footer style="height:44px;background:linear-gradient(90deg,#060709,#0b0f12);display:flex;align-items:center;justify-content:center;color:#8f98a0">Part1 — カメラ/コントロール/シーン初期化</footer>
 </div>
 
 <script>
 /*
-  Vault Heist — Single File Game
-  - 3D map with three.js (simple, blocky)
-  - Minimap canvas for overview
-  - Joystick for mobile, WASD for desktop
-  - Vault dial mini-game
-  - Police spawning and combat
-  - Theme presets ("普通にゴミ", "普通", "普通に神")
-  - Uses localStorage for save
+  Part1: 目的
+  - three.js を用いたシーン初期化を正しく行う（レンダラサイズ・pixelRatio を固定）
+  - PointerLockControls を導入してマウスでカメラ操作できるようにする
+  - モバイル向けの回転はタッチスワイプで代替
+  - ぼやけた（DOF的）処理はまだ一切入れない（原因切り分け）
+  - 以降の Part2..Part5 で金庫演出・弾の可視化・室内遷移等を追加
 */
 
-/* -------------------------
-   Helper utilities
-   ------------------------- */
-const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
-const rand = (min,max) => Math.floor(Math.random()*(max-min+1))+min;
-const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+// ----------------------------
+// ヘルパー
+// ----------------------------
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand = (a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const fmtMoney = n => '¥' + Math.floor(n).toLocaleString('ja-JP');
 
-/* -------------------------
-   Audio (Howler)
-   ------------------------- */
-const sfx = {
-  beep: new Howl({ src: ['https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg'], volume:0.3 }),
-  dialTick: new Howl({ src: ['https://actions.google.com/sounds/v1/alarms/beep_short.ogg'], volume:0.18 }),
-  gunshot: new Howl({ src: ['https://actions.google.com/sounds/v1/weapons/medium_gunshot.ogg'], volume:0.5 }),
-  policeSiren: new Howl({ src: ['https://actions.google.com/sounds/v1/alarms/police_siren.ogg'], loop:true, volume:0.2 }),
-  success: new Howl({ src: ['https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg'], volume:0.35 })
+// ----------------------------
+// 基本 state
+// ----------------------------
+const state = {
+  mapSize:600,
+  player:{ x:300, z:300, y:0, money:12000, guns:1, speed:2.0, hp:100 },
+  buildings:[],
+  vaults:[],
+  police:[],
+  preset:'normal'
 };
 
-/* -------------------------
-   Game state
-   ------------------------- */
-let state = {
-  preset: 'normal', // trash | normal | god
-  mapSize: 600,
-  player: {
-    x: 300, z: 300, y: 0, angle:0,
-    money: 15000,
-    guns: { pistol:1 },
-    cars: 0,
-    speed: 1.6,
-    hp: 100
-  },
-  buildings: [],
-  vaults: [], // references to building indices that are vault-bearing
-  police: [],
-  timeSinceLastVault: 0,
-  heat: 0,
-  running: true,
-  lastSave: null
-};
-
-/* -------------------------
-   Theme presets
-   ------------------------- */
-const PRESETS = {
-  trash: { enemyAggro:1.2, vaultEase:0.6, moneyMultiplier:0.7, visuals: 'low' },
-  normal: { enemyAggro:1.0, vaultEase:1.0, moneyMultiplier:1.0, visuals: 'mid' },
-  god:   { enemyAggro:0.8, vaultEase:1.3, moneyMultiplier:1.4, visuals: 'hi' }
-};
-
-/* -------------------------
-   Map generation
-   ------------------------- */
-function generateMap(seedOverride) {
-  state.buildings = [];
-  state.vaults = [];
-  const size = state.mapSize;
-  // grid partition to place buildings reasonably
-  const cell = 60; // grid cell
-  const cols = Math.floor(size / cell);
-  const rows = Math.floor(size / cell);
-  // places for special shops
-  const specialTypes = ['carshop','slots','blackmarket'];
-  // ensure at least one bank, several conv, pachinko
-  let bankPlaced = false;
-  for (let r=0;r<rows;r++){
-    for (let c=0;c<cols;c++){
-      const cx = c*cell + rand(8, cell-8);
-      const cz = r*cell + rand(8, cell-8);
-      let kind = 'dummy'; // default visual filler
-      let sizeX = rand(18,36), sizeZ = rand(18,36);
-      // random decide special
-      const roll = Math.random();
-      if (!bankPlaced && roll < 0.02) { kind='bank'; bankPlaced=true; sizeX=48; sizeZ=48; }
-      else if (roll < 0.06) kind = 'conbini';
-      else if (roll < 0.10) kind = 'pachinko';
-      else if (roll < 0.115 && specialTypes.length) kind = specialTypes.shift();
-      else if (roll < 0.3) kind = 'dummy';
-      else kind = 'dummy';
-      // push building
-      state.buildings.push({ kind, x:cx, z:cz, sx:sizeX, sz:sizeZ, rot: 0 });
-      // vault-bearing places
-      if (kind === 'bank' || kind === 'conbini' || kind === 'pachinko') {
-        state.vaults.push({ buildingIndex: state.buildings.length-1, locked:true, attempts:0,
-          dialSolution: [rand(0,9),rand(0,9),rand(0,9),rand(0,9)], // 4-digit
-          progress: [false,false,false,false]
-        });
-      }
-    }
-  }
-  // ensure at least one bank exists
-  if (!bankPlaced) {
-    const cx = rand(80,size-80), cz = rand(80,size-80);
-    state.buildings.push({ kind:'bank', x:cx, z:cz, sx:56, sz:56, rot:0 });
-    state.vaults.push({ buildingIndex: state.buildings.length-1, locked:true, attempts:0,
-      dialSolution: [rand(0,9),rand(0,9),rand(0,9),rand(0,9)],
-      progress: [false,false,false,false]
-    });
-  }
-  // adjust money values and maintain vault count
-  state.vaults.forEach(v=>{
-    const b = state.buildings[v.buildingIndex];
-    if (b.kind === 'bank') v.reward = 50000 * PRESETS[state.preset].moneyMultiplier;
-    else if (b.kind === 'pachinko') v.reward = 14000 * PRESETS[state.preset].moneyMultiplier;
-    else if (b.kind === 'conbini') v.reward = 4200 * PRESETS[state.preset].moneyMultiplier;
-  });
-  // scatter more decorative dummy buildings to make map feel full
-  for (let i=0;i<40;i++){
-    state.buildings.push({ kind:'dummy', x: rand(10,size-10), z: rand(10,size-10), sx: rand(8,24), sz: rand(8,24), rot:0 });
-  }
-  // shuffle a bit
-  state.vaultCount = state.vaults.length;
-  state.timeSinceLastVault = 0;
-  notify(`${state.vaults.length} 個の金庫がマップに生成されました。`);
-  saveStateToLocal(false);
-}
-
-/* -------------------------
-   Save/load
-   ------------------------- */
-function saveStateToLocal(show=true) {
-  try {
-    const toSave = {
-      preset: state.preset,
-      player: state.player,
-      mapSize: state.mapSize,
-      buildings: state.buildings,
-      vaults: state.vaults,
-      lastSave: Date.now()
-    };
-    localStorage.setItem('vault_heist_save', JSON.stringify(toSave));
-    if (show) notify('ゲームを保存しました。');
-  } catch(e){ console.warn('save failed', e); }
-}
-function loadStateFromLocal() {
-  try {
-    const raw = localStorage.getItem('vault_heist_save');
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    state.preset = parsed.preset || state.preset;
-    state.player = parsed.player || state.player;
-    state.mapSize = parsed.mapSize || state.mapSize;
-    state.buildings = parsed.buildings || state.buildings;
-    state.vaults = parsed.vaults || state.vaults;
-    state.lastSave = parsed.lastSave || null;
-    notify('保存データを読み込みました。');
-    return true;
-  } catch(e){ return false; }
-}
-
-/* -------------------------
-   Notifications
-   ------------------------- */
-const notifWrap = document.getElementById('notifs');
-function notify(msg, ttl=3500) {
-  const el = document.createElement('div'); el.className='toast'; el.textContent = msg;
-  notifWrap.prepend(el);
-  setTimeout(()=> {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity 300ms';
-    setTimeout(()=> el.remove(), 320);
-  }, ttl);
-}
-
-/* -------------------------
-   Three.js scene setup
-   ------------------------- */
-let renderer, scene, camera, playerMesh, clock, controls;
-function initThree() {
+// ----------------------------
+// Three.js: 初期化
+// ----------------------------
+let renderer, scene, camera, clock, controls, playerMesh, buildingGroup;
+function initThree(){
   const canvas = document.getElementById('main3d');
-  renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2));
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-  scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x061220, 0.0012);
+  // 重要: レンダラに window 内寸を使ってクリアな表示にする
+  renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:false});
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = false; // Part1: 影は後で有効化
 
-  camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
-  camera.position.set(state.player.x - 50, 120, state.player.z + 100);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b1530);
+
+  // camera
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.set(state.player.x - 40, 100, state.player.z + 120);
   camera.lookAt(state.player.x, 0, state.player.z);
 
+  // ライト
+  const amb = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.5);
+  dir.position.set(120,300,200);
+  scene.add(dir);
+
   // ground
-  const gmat = new THREE.MeshStandardMaterial({ color:0x23364f, roughness:1, metalness:0.0 });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(state.mapSize, state.mapSize, 8,8), gmat);
+  const groundMat = new THREE.MeshStandardMaterial({color:0x22334a, roughness:1});
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(state.mapSize, state.mapSize, 4,4), groundMat);
   ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
   scene.add(ground);
 
-  // ambient & directional
-  const amb = new THREE.AmbientLight(0x999999, 0.75);
-  scene.add(amb);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-  dir.position.set(100,300,200);
-  scene.add(dir);
-
-  // simple skybox-ish
-  scene.background = new THREE.Color(0x0b1530);
-
-  // player mesh
+  // player visual
   const pgeo = new THREE.CylinderGeometry(6,6,18,8);
-  const pmat = new THREE.MeshStandardMaterial({ color:0xffc857 });
+  const pmat = new THREE.MeshStandardMaterial({color:0xffc857});
   playerMesh = new THREE.Mesh(pgeo, pmat);
-  playerMesh.position.set(state.player.x, 9, state.player.z);
+  playerMesh.position.set(state.player.x - state.mapSize/2, 9, state.player.z - state.mapSize/2);
   scene.add(playerMesh);
 
-  // build world visuals
+  // PointerLockControls（マウスでカメラを動かす）
+  controls = new THREE.PointerLockControls(camera, document.body);
+  // pointer lock の状態を管理
+  document.addEventListener('pointerlockchange', ()=>{
+    const locked = document.pointerLockElement === document.body;
+    // ロック時の UI など処理を入れる場合ここで行う
+    console.log('pointerlockchange locked=', locked);
+  });
+
+  // エスケープ等で解除されたときの保険
+  document.addEventListener('keydown', (e)=>{
+    if(e.key==='Escape'){ try{ document.exitPointerLock(); }catch(e){} }
+  });
+
+  // 初回クリックで pointer lock を要求（デスクトップ）
+  renderer.domElement.addEventListener('click', ()=>{
+    if (document.pointerLockElement !== document.body) {
+      document.body.requestPointerLock();
+    }
+  });
+
+  // モバイルの場合は pointer lock が使えないのでタッチでカメラ回転を代替
+  setupMobileCameraControls();
+
+  // ビル群の簡易作成（見た目だけ）
   buildWorldVisuals();
 
-  // orbit controls for debug (disabled by default on mobile)
-  controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enabled = false;
-
   clock = new THREE.Clock();
-  window.addEventListener('resize', onResize);
-}
-function onResize() {
-  const canvas = document.getElementById('main3d');
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  renderer.setSize(w,h,false);
-  camera.aspect = w/h; camera.updateProjectionMatrix();
+  window.addEventListener('resize', onWindowResize);
 }
 
-/* -------------------------
-   Build building visuals
-   ------------------------- */
-let buildingGroup;
-function buildWorldVisuals() {
-  if (buildingGroup) { scene.remove(buildingGroup); buildingGroup.traverse(o=>{ if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+function onWindowResize(){
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);
+}
+
+// ----------------------------
+// 簡易ワールド生成（Part1）
+// ----------------------------
+function generateMap(){
+  state.buildings = [];
+  state.vaults = [];
+  const cell = 60; const cols = Math.floor(state.mapSize / cell), rows = cols;
+  let bankPlaced = false;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const cx = c*cell + rand(8, cell-8);
+      const cz = r*cell + rand(8, cell-8);
+      let kind = 'dummy';
+      const roll = Math.random();
+      if(!bankPlaced && roll < 0.02){ kind='bank'; bankPlaced=true; }
+      else if(roll<0.06) kind='conbini';
+      else if(roll<0.1) kind='pachinko';
+      state.buildings.push({kind,x:cx,z:cz,sx:rand(12,36),sz:rand(12,36)});
+      if(['bank','conbini','pachinko'].includes(kind)){
+        state.vaults.push({buildingIndex:state.buildings.length-1, locked:true, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward: (kind==='bank'?50000:(kind==='pachinko'?14000:4200))});
+      }
+    }
+  }
+  if(!bankPlaced){ const cx=rand(80,state.mapSize-80), cz=rand(80,state.mapSize-80); state.buildings.push({kind:'bank',x:cx,z:cz,sx:56,sz:56}); state.vaults.push({buildingIndex:state.buildings.length-1, locked:true, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:50000}); }
+  document.getElementById('vaultCount').textContent = state.vaults.length;
+}
+
+function buildWorldVisuals(){
+  if (buildingGroup) { scene.remove(buildingGroup); }
   buildingGroup = new THREE.Group();
   state.buildings.forEach((b,i)=>{
     const color = kindToColor(b.kind);
-    const geo = new THREE.BoxGeometry(b.sx, rand(24,80), b.sz);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness:1, metalness:0.05 });
+    const height = rand(20,80);
+    const geo = new THREE.BoxGeometry(b.sx, height, b.sz);
+    const mat = new THREE.MeshStandardMaterial({color});
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(b.x - state.mapSize/2, geo.parameters.height/2, b.z - state.mapSize/2);
+    mesh.position.set(b.x - state.mapSize/2, height/2, b.z - state.mapSize/2);
     mesh.userData = { idx:i, kind:b.kind };
     buildingGroup.add(mesh);
-    // small label as plane
-    const lbl = makeLabelMesh(b.kind);
-    lbl.position.set(b.x - state.mapSize/2, geo.parameters.height + 6, b.z - state.mapSize/2);
-    buildingGroup.add(lbl);
   });
   scene.add(buildingGroup);
 }
+function kindToColor(k){ switch(k){ case 'bank': return 0x2ecc71; case 'conbini': return 0x3498db; case 'pachinko': return 0xe67e22; default: return 0x95a5a6 } }
 
-function kindToColor(kind) {
-  switch(kind) {
-    case 'bank': return 0x2ecc71;
-    case 'conbini': return 0x3498db;
-    case 'pachinko': return 0xe67e22;
-    case 'carshop': return 0x9b59b6;
-    case 'slots': return 0xf1c40f;
-    case 'blackmarket': return 0xe84393;
-    default: return 0x95a5a6;
-  }
-}
-function makeLabelMesh(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(255,255,255,0.02)';
-  ctx.fillRect(0,0,256,64);
-  ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif'; ctx.textAlign='center';
-  ctx.fillText(text, 128, 38);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(40,10,1);
-  return sprite;
-}
-
-/* -------------------------
-   Minimap render
-   ------------------------- */
+// ----------------------------
+// ミニマップ描画（HTML canvas）
+// ----------------------------
 const miniCanvas = document.getElementById('miniCanvas');
 const mctx = miniCanvas.getContext('2d');
-function drawMinimap() {
-  const W = miniCanvas.width, H = miniCanvas.height;
-  mctx.clearRect(0,0,W,H);
-  // background
-  mctx.fillStyle = '#031021'; mctx.fillRect(0,0,W,H);
-  // scale
+function drawMinimap(){
+  const W = miniCanvas.width, H = miniCanvas.height; mctx.clearRect(0,0,W,H);
+  mctx.fillStyle = '#02131a'; mctx.fillRect(0,0,W,H);
   const s = W / state.mapSize;
-  // draw buildings
-  state.buildings.forEach((b,i)=>{
-    const x = b.x * s, y = b.z * s;
-    const w = clamp(b.sx * s, 3, 18), h = clamp(b.sz * s, 3, 18);
-    let col = '#95a5a6';
-    if (b.kind === 'bank') col = '#2ecc71';
-    if (b.kind === 'conbini') col = '#3498db';
-    if (b.kind === 'pachinko') col = '#e67e22';
-    if (b.kind === 'carshop' || b.kind==='slots' || b.kind==='blackmarket') col = '#9b59b6';
-    mctx.fillStyle = col;
-    mctx.fillRect(x - w/2, y - h/2, w, h);
+  state.buildings.forEach(b=>{
+    const x = b.x*s, y=b.z*s, w=clamp(b.sx*s,3,16), h=clamp(b.sz*s,3,16);
+    mctx.fillStyle = (b.kind==='bank'?'#2ecc71':(b.kind==='conbini'?'#3498db':(b.kind==='pachinko'?'#e67e22':'#95a5a6')));
+    mctx.fillRect(x-w/2, y-h/2, w, h);
   });
-  // draw player
+  // player
   const px = state.player.x * s, pz = state.player.z * s;
-  mctx.fillStyle = '#ffde59';
-  mctx.beginPath(); mctx.arc(px, pz, 6, 0, Math.PI*2); mctx.fill();
+  mctx.fillStyle = '#ffde59'; mctx.beginPath(); mctx.arc(px,pz,5,0,Math.PI*2); mctx.fill();
 }
 
-/* -------------------------
-   Input: joystick & keyboard
-   ------------------------- */
-let input = { x:0, y:0, fire:false, interact:false, openVault:false };
-const joy = document.getElementById('joy');
-const stick = document.getElementById('stick');
-let dragging = false;
-let center = null;
-
-function setupJoystick() {
-  const rect = joy.getBoundingClientRect();
-  center = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
-  const start = (e) => {
-    e.preventDefault();
-    dragging = true;
-    joy.classList.add('active');
-    document.addEventListener('touchmove', move);
-    document.addEventListener('touchend', end);
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', end);
-  };
-  const move = (e) => {
-    if (!dragging) return;
-    let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const dx = clientX - center.x, dy = clientY - center.y;
-    const max = 46;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const nx = clamp(dx / max, -1, 1);
-    const ny = clamp(dy / max, -1, 1);
-    input.x = nx;
-    input.y = ny;
-    const sx = clamp(dx, -max, max), sy = clamp(dy, -max, max);
-    stick.style.transform = `translate(${sx}px, ${sy}px)`;
-  };
-  const end = (e) => {
-    dragging = false;
-    input.x = 0; input.y = 0;
-    stick.style.transform = 'translate(0,0)';
-    document.removeEventListener('touchmove', move);
-    document.removeEventListener('touchend', end);
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', end);
-  };
-  joy.addEventListener('touchstart', start);
-  joy.addEventListener('mousedown', start);
-
+// ----------------------------
+// 入力と移動（簡易）
+// ----------------------------
+let input = { x:0, y:0, fire:false, interact:false };
+const joy = document.getElementById('joy'), stick = document.getElementById('stick');
+let dragging=false, center=null;
+function setupJoystick(){
+  const rect = joy.getBoundingClientRect(); center={x:rect.left+rect.width/2, y:rect.top+rect.height/2};
+  const start = (e)=>{ e.preventDefault(); dragging=true; document.addEventListener('touchmove', move); document.addEventListener('touchend', end); document.addEventListener('mousemove', move); document.addEventListener('mouseup', end); };
+  const move = (e)=>{ if(!dragging) return; let cx = e.touches?e.touches[0].clientX:e.clientX; let cy = e.touches?e.touches[0].clientY:e.clientY; const dx = cx-center.x, dy=cy-center.y; const max=46; const nx = clamp(dx/max, -1, 1), ny = clamp(dy/max, -1, 1); input.x = nx; input.y = ny; stick.style.transform = `translate(${clamp(dx,-max,max)}px, ${clamp(dy,-max,max)}px)`; };
+  const end = (e)=>{ dragging=false; input.x=0; input.y=0; stick.style.transform='translate(0,0)'; document.removeEventListener('touchmove', move); document.removeEventListener('touchend', end); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', end); };
+  joy.addEventListener('touchstart', start); joy.addEventListener('mousedown', start);
   // keyboard
-  window.addEventListener('keydown', (e)=>{
-    if (e.key === 'w' || e.key === 'ArrowUp') input.y = -1;
-    if (e.key === 's' || e.key === 'ArrowDown') input.y = 1;
-    if (e.key === 'a' || e.key === 'ArrowLeft') input.x = -1;
-    if (e.key === 'd' || e.key === 'ArrowRight') input.x = 1;
-    if (e.code === 'Space') input.fire = true;
-    if (e.key === 'e') input.interact = true;
-    if (e.key === 'v') input.openVault = true;
+  window.addEventListener('keydown', (e)=>{ if(e.key==='w'||e.key==='ArrowUp') input.y=-1; if(e.key==='s'||e.key==='ArrowDown') input.y=1; if(e.key==='a'||e.key==='ArrowLeft') input.x=-1; if(e.key==='d'||e.key==='ArrowRight') input.x=1; if(e.code==='Space') input.fire=true; if(e.key==='e') input.interact=true; });
+  window.addEventListener('keyup', (e)=>{ if(['w','s','ArrowUp','ArrowDown'].includes(e.key)) input.y=0; if(['a','d','ArrowLeft','ArrowRight'].includes(e.key)) input.x=0; if(e.code==='Space') input.fire=false; if(e.key==='e') input.interact=false; });
+}
+
+// mobile camera rotation fallback (touch swipe to rotate camera)
+let lastTouch = null;
+function setupMobileCameraControls(){
+  let startX=0, startY=0, rotX=0, rotY=0;
+  const sensitivity = 0.0045;
+  // for touch drag rotate
+  window.addEventListener('touchstart', (e)=>{
+    if(e.touches.length===1){ lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY}; }
   });
-  window.addEventListener('keyup', (e)=>{
-    if (['w','s','ArrowUp','ArrowDown'].includes(e.key)) input.y = 0;
-    if (['a','d','ArrowLeft','ArrowRight'].includes(e.key)) input.x = 0;
-    if (e.code === 'Space') input.fire = false;
-    if (e.key === 'e') input.interact = false;
-    if (e.key === 'v') input.openVault = false;
+  window.addEventListener('touchmove', (e)=>{
+    if(!lastTouch || e.touches.length!==1) return;
+    const dx = e.touches[0].clientX - lastTouch.x; const dy = e.touches[0].clientY - lastTouch.y;
+    lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    // rotate camera around player center
+    camera.rotation.y -= dx * sensitivity;
+    camera.rotation.x -= dy * sensitivity;
+    camera.rotation.x = clamp(camera.rotation.x, -Math.PI/2 + 0.1, Math.PI/2 - 0.1);
   });
+  window.addEventListener('touchend', ()=>{ lastTouch = null; });
 }
 
-/* -------------------------
-   Interactions: actions, firing, vault
-   ------------------------- */
-document.getElementById('fireBtn').addEventListener('click', ()=> { input.fire = true; setTimeout(()=> input.fire=false,100); });
-document.getElementById('interactBtn').addEventListener('click', ()=> { input.interact = true; setTimeout(()=> input.interact=false,120); });
-document.getElementById('vaultBtn').addEventListener('click', ()=> { openVaultIfNearby(); });
-
-function openVaultIfNearby() {
-  // find closest vault within range
-  const range = 40;
-  let found = null;
-  for (const v of state.vaults) {
-    const b = state.buildings[v.buildingIndex];
-    const dx = state.player.x - b.x;
-    const dz = state.player.z - b.z;
-    const d = Math.sqrt(dx*dx + dz*dz);
-    if (d < range && v.locked) { found = v; break; }
-  }
-  if (!found) { notify('近くに閉ざされた金庫はない。'); return; }
-  openVaultModal(found);
+// ----------------------------
+// 簡易射撃（Part1: ロジックのみ）
+// ----------------------------
+function playerFire(){
+  if(!state.player.guns){ notify('銃が無い'); return; }
+  // 弾の可視化は Part3 で実装予定
+  console.log('fire');
 }
 
-/* -------------------------
-   Vault modal and dial game
-   ------------------------- */
-const vaultModal = document.getElementById('vaultModal');
-let currentVault = null;
-function openVaultModal(vaultObj) {
-  currentVault = vaultObj;
-  const row = document.getElementById('dialRow');
-  row.innerHTML = '';
-  // render 4 dials
-  for (let i=0;i<4;i++){
-    const d = document.createElement('div');
-    d.className = 'dial';
-    d.dataset.idx = i;
-    d.textContent = '0';
-    d.addEventListener('click', ()=>{
-      const val = (parseInt(d.textContent)+1) % 10;
-      d.textContent = val;
-      // mark progress highlight if matches solution for that index
-      const sol = vaultObj.dialSolution[i];
-      if (val === sol) {
-        d.classList.add('correct');
-        sfx.dialTick.play();
-      } else {
-        d.classList.remove('correct');
-      }
-    });
-    row.appendChild(d);
-  }
-  vaultModal.classList.add('open');
-  vaultModal.setAttribute('aria-hidden','false');
-}
-document.getElementById('closeVault').addEventListener('click', ()=> {
-  vaultModal.classList.remove('open'); vaultModal.setAttribute('aria-hidden','true'); currentVault=null;
-});
-document.getElementById('attemptOpen').addEventListener('click', ()=> {
-  if (!currentVault) return;
-  const inputs = Array.from(document.querySelectorAll('.dial')).map(d=>parseInt(d.textContent));
-  // evaluate matches
-  let correctCount = 0;
-  for (let i=0;i<4;i++){
-    if (inputs[i] === currentVault.dialSolution[i]) {
-      correctCount++;
-      currentVault.progress[i] = true;
-    } else {
-      currentVault.progress[i] = false;
-    }
-  }
-  currentVault.attempts++;
-  if (correctCount === 4) {
-    // success
-    currentVault.locked = false;
-    state.player.money += currentVault.reward;
-    sfx.success.play();
-    notify(`金庫解除成功！ ${fmtMoney(currentVault.reward)} を手に入れた。`);
-    vaultModal.classList.remove('open'); vaultModal.setAttribute('aria-hidden','true'); currentVault=null;
-    // small explosion animation at building
-    smallBurstAtBuilding(currentVault && state.buildings[currentVault.buildingIndex]);
-  } else {
-    // partial success small effect
-    sfx.beep.play();
-    notify(`${correctCount} 桁一致。金庫ダイヤルが反応した。`);
-    // escalate police heat based on difficulty
-    state.heat += (4 - correctCount) * (1 + PRESETS[state.preset].enemyAggro * 0.25);
-    // if too many attempts, police summoned faster
-    if (currentVault.attempts >= 5) {
-      spawnPoliceNearPlayer();
-    }
-  }
-});
+document.getElementById('btnFire').addEventListener('click', ()=>{ playerFire(); });
+document.getElementById('btnInteract').addEventListener('click', ()=>{ tryInteractNearby(); });
 
-/* little burst effect placeholder (visual only) */
-function smallBurstAtBuilding(building) {
-  if (!building) return;
-  // create a temporary sprite or GSAP flash
-  notify('小さな演出: ダイヤルが正しくはまった！');
+document.getElementById('btnRegenerate').addEventListener('click', ()=>{ generateMap(); buildWorldVisuals(); drawMinimap(); });
+
+document.getElementById('btnSave').addEventListener('click', ()=>{ localStorage.setItem('vh_save_part1', JSON.stringify({player:state.player, buildings:state.buildings, vaults:state.vaults})); notify('保存しました (Part1)'); });
+
+document.getElementById('btnVault').addEventListener('click', ()=>{ openVaultIfNearby(); });
+
+function notify(msg, ttl=2500){ const el = document.createElement('div'); el.textContent=msg; el.style.position='fixed'; el.style.left='50%'; el.style.bottom='72px'; el.style.transform='translateX(-50%)'; el.style.padding='8px 12px'; el.style.background='rgba(0,0,0,0.6)'; el.style.borderRadius='10px'; el.style.zIndex=9999; document.body.appendChild(el); setTimeout(()=>el.remove(), ttl); }
+
+// ----------------------------
+// 簡易インタラクト（Part1: プレスホルダ）
+// ----------------------------
+function tryInteractNearby(){
+  // Part2 で詳細な店ごとのロジックに拡張予定
+  let nearest=null, nd=99999;
+  state.buildings.forEach((b,i)=>{ const d=Math.hypot(b.x-state.player.x, b.z-state.player.z); if(d<nd){ nd=d; nearest={b,i,d}; } });
+  if(nearest && nearest.d < 36){ notify('近くの建物:' + nearest.b.kind); }
+  else notify('近くに建物が無い');
 }
 
-/* -------------------------
-   Police logic & combat
-   ------------------------- */
-function spawnPoliceNearPlayer() {
-  // spawn police at map edge near player
-  const angle = Math.random()*Math.PI*2;
-  const dist = 220;
-  const px = state.player.x + Math.cos(angle)*dist;
-  const pz = state.player.z + Math.sin(angle)*dist;
-  const p = { x:px, z:pz, hp:100, speed: 1.2 * PRESETS[state.preset].enemyAggro, target:'player', id:Date.now()+Math.random() };
-  state.police.push(p);
-  notify('警察が到着しました！発見されると射撃戦になります。');
-  sfx.policeSiren.play();
+function openVaultIfNearby(){
+  // Part2 でダイヤルUIを出す
+  let found=null;
+  for(const v of state.vaults){ const b = state.buildings[v.buildingIndex]; const d=Math.hypot(b.x-state.player.x, b.z-state.player.z); if(d<40 && v.locked){ found=v; break; } }
+  if(!found) return notify('近くに解除可能な金庫はありません');
+  notify('金庫を発見: 次のパートでダイヤルUIを表示します');
 }
 
-/* minimal combat simulation */
-function policeAI(dt) {
-  const toRemove = [];
-  state.police.forEach((pol, idx) => {
-    // movement towards player
-    const dx = state.player.x - pol.x;
-    const dz = state.player.z - pol.z;
-    const d = Math.sqrt(dx*dx + dz*dz);
-    if (d > 2) {
-      const nx = dx/d, nz = dz/d;
-      pol.x += nx * pol.speed;
-      pol.z += nz * pol.speed;
-    }
-    // fire at player when close
-    if (d < 160 && Math.random() < 0.006 * dt * PRESETS[state.preset].enemyAggro) {
-      // police shoots
-      sfx.gunshot.play();
-      // cause player damage if not far
-      if (d < 90) {
-        state.player.hp -= Math.floor(5 + Math.random()*18);
-        notify('被弾した！HP -' + (5 + Math.floor(Math.random()*18)));
-      }
-    }
-    // if police dies, mark removal
-    if (pol.hp <= 0) toRemove.push(idx);
-  });
-  // remove dead police
-  for (let i=toRemove.length-1;i>=0;i--) state.police.splice(toRemove[i],1);
-  if (state.police.length===0) { sfx.policeSiren.stop(); }
-}
-
-/* -------------------------
-   Player shooting
-   ------------------------- */
-function playerFire() {
-  if (!state.player.guns || state.player.guns.pistol <= 0) { notify('銃がない！'); return; }
-  sfx.gunshot.play();
-  // simple hit chance: shoot nearest police within 140 units
-  let nearest = null, nd = 99999;
-  for (const p of state.police) {
-    const d = Math.hypot(p.x - state.player.x, p.z - state.player.z);
-    if (d < nd) { nd = d; nearest = p; }
-  }
-  if (nearest && nd < 160) {
-    // chance to hit based on distance
-    const hitProb = clamp(1 - nd/220, 0.12, 0.95);
-    if (Math.random() < hitProb) {
-      const dmg = rand(18,36);
-      nearest.hp -= dmg;
-      notify(`命中！警官に ${dmg} のダメージ。`);
-      if (nearest.hp <= 0) {
-        notify('警官を倒した。');
-        // small reward maybe drops cash
-        const loot = rand(300,1200);
-        state.player.money += loot;
-        notify(`警官の所持金 ${fmtMoney(loot)} を獲得。`);
-      }
-    } else {
-      notify('外した...');
-    }
-  } else {
-    notify('ターゲットがいない。');
-  }
-}
-
-/* -------------------------
-   Game tick & update
-   ------------------------- */
+// ----------------------------
+// メインループ
+// ----------------------------
 let lastTime = performance.now();
-function gameLoop(now) {
-  const dt = (now - lastTime) / 16.66667; // approx frames
-  lastTime = now;
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt = (now - lastTime) / 1000; lastTime = now;
 
-  // movement
-  const moveSpeed = state.player.speed * (1 + (state.player.cars ? 0.3 : 0)) * (dt*0.9);
-  // normalize input vector
-  let mag = Math.hypot(input.x, input.y);
-  if (mag > 1) { input.x /= mag; input.y /= mag; mag = 1; }
-  state.player.x += input.x * moveSpeed * 1.8;
-  state.player.z += input.y * moveSpeed * 1.8;
-  state.player.x = clamp(state.player.x, 0, state.mapSize);
-  state.player.z = clamp(state.player.z, 0, state.mapSize);
+  // player movement from joystick/keyboard
+  const speed = state.player.speed * (1 + (state.player.cars?0.25:0));
+  if(input.x !== 0 || input.y !== 0){ state.player.x += input.x * speed * dt * 40; state.player.z += input.y * speed * dt * 40; state.player.x = clamp(state.player.x, 0, state.mapSize); state.player.z = clamp(state.player.z, 0, state.mapSize); playerMesh.position.set(state.player.x - state.mapSize/2, playerMesh.position.y, state.player.z - state.mapSize/2); }
 
-  // update mesh positions
-  playerMesh.position.set(state.player.x - state.mapSize/2, playerMesh.position.y, state.player.z - state.mapSize/2);
-
-  // camera follow (3rd person)
-  camera.position.lerp(new THREE.Vector3(state.player.x - 50, 120, state.player.z + 100 - Math.min(40, state.heat)), 0.08);
+  // camera follow (smooth)
+  const camTargetPos = new THREE.Vector3(state.player.x - 50, 100, state.player.z + 120);
+  camera.position.lerp(camTargetPos, 0.06);
   camera.lookAt(new THREE.Vector3(state.player.x - state.mapSize/2, 0, state.player.z - state.mapSize/2));
-
-  // police update
-  policeAI(dt);
-
-  // handle firing input
-  if (input.fire) {
-    input.fire = false;
-    playerFire();
-    state.heat += 2;
-  }
-
-  // update UI
-  document.getElementById('money').textContent = fmtMoney(state.player.money);
-  document.getElementById('guns').textContent = `拳銃:${state.player.guns.pistol || 0}`;
-  document.getElementById('cars').textContent = `${state.player.cars}`;
-  document.getElementById('heat').textContent = `${Math.round(state.heat)}`;
-
-  // police spawn if heat high and interval reached
-  if (state.heat > 20 && state.police.length < 6 && Math.random() < 0.01) spawnPoliceNearPlayer();
-  // heat decays gradually
-  state.heat = Math.max(0, state.heat - 0.02*dt);
 
   // draw minimap
   drawMinimap();
 
-  // render three.js
   renderer.render(scene, camera);
-
-  requestAnimationFrame(gameLoop);
 }
 
-/* -------------------------
-   UI & event wiring
-   ------------------------- */
-document.getElementById('spawnBtn').addEventListener('click', ()=> {
-  generateMap();
-  buildWorldVisuals();
-  notify('新しいマップを生成しました。');
-});
-document.getElementById('saveBtn').addEventListener('click', ()=> saveStateToLocal(true));
-document.querySelectorAll('.preset').forEach(el=>{
-  el.addEventListener('click', ()=> {
-    document.querySelectorAll('.preset').forEach(p=>p.classList.remove('active'));
-    el.classList.add('active');
-    state.preset = el.dataset.preset;
-    notify(`プリセット ${el.textContent} に設定しました。`);
-    // regenerate map with new preset
-    generateMap();
-    buildWorldVisuals();
-  });
-});
-
-// load saved game if exists
-loadStateFromLocal();
-
-// initial map gen if none
-if (!state.buildings || state.buildings.length === 0) generateMap();
+// ----------------------------
+// 初期化実行
+// ----------------------------
+generateMap();
 initThree();
 setupJoystick();
-requestAnimationFrame(gameLoop);
+requestAnimationFrame(animate);
 
-/* -------------------------
-   Additional shop interactions (simplified)
-   ------------------------- */
-function tryInteractNearby() {
-  // find nearest building within interaction range
-  const range = 28;
-  let nearest = null, nd = 99999;
-  let bIndex = -1;
-  state.buildings.forEach((b,i)=>{
-    const d = Math.hypot(b.x - state.player.x, b.z - state.player.z);
-    if (d < nd) { nd = d; nearest = b; bIndex = i; }
-  });
-  if (nearest && nd <= range) {
-    // describe interactions based on kind
-    switch(nearest.kind) {
-      case 'conbini':
-        notify('コンビニを探索。金庫を見つけたら行動ボタンでダイヤルを操作。');
-        break;
-      case 'pachinko':
-        // mini-slot purchase: quick slot gamble
-        if (state.player.money >= 200) {
-          state.player.money -= 200;
-          const result = Math.random();
-          if (result < 0.08) {
-            const win = 5000 * PRESETS[state.preset].moneyMultiplier;
-            state.player.money += win;
-            notify(`パチンコ大当たり！ ${fmtMoney(win)} を獲得。`);
-          } else if (result < 0.32) {
-            const win = 800;
-            state.player.money += win;
-            notify(`小当たり ${fmtMoney(win)} 。`);
-          } else {
-            notify('外れた...');
-          }
-        } else {
-          notify('所持金不足: パチンコは200円が必要。');
-        }
-        break;
-      case 'bank':
-        notify('銀行の前。大きな金庫がある… 金庫ボタンでダイヤルを試そう。');
-        break;
-      case 'carshop':
-        if (state.player.money >= 12000) {
-          state.player.money -= 12000;
-          state.player.cars++;
-          notify('車を購入した。移動速度が少し上昇する。');
-          state.player.speed += 0.15;
-        } else notify('車屋: 購入金不足 (¥12,000)');
-        break;
-      case 'slots':
-        // stress-free slot shop
-        if (state.player.money >= 300) {
-          state.player.money -= 300;
-          const r = Math.random();
-          if (r < 0.05) { const w=15000; state.player.money+=w; notify(`スロット大勝ち！ ${fmtMoney(w)} を獲得`); }
-          else if (r < 0.4) { const w=1200; state.player.money+=w; notify(`スロット当たった: ${fmtMoney(w)}`); }
-          else notify('スロット外れ');
-        } else notify('スロットに入れるお金が足りません(¥300)');
-        break;
-      case 'blackmarket':
-        // buy gun
-        if (state.player.money >= 4500) {
-          state.player.money -= 4500;
-          state.player.guns.pistol = (state.player.guns.pistol||0) + 1;
-          notify('闇銃屋で拳銃を購入した。');
-        } else notify('闇銃屋: 金が足りん… (¥4,500)');
-        break;
-      default:
-        notify('この建物は外観のみのダミーです。');
-    }
-  } else {
-    notify('近くに相手がいない。');
-  }
-}
-
-document.getElementById('interactBtn').addEventListener('click', tryInteractNearby);
-
-/* -------------------------
-   Initial UI values & finishing touches
-   ------------------------- */
-document.getElementById('vaultCount').textContent = state.vaults.length;
-document.getElementById('money').textContent = fmtMoney(state.player.money);
-
-/* -------------------------
-   Small improvements: autosave interval
-   ------------------------- */
-setInterval(()=> saveStateToLocal(false), 30000);
-
-/* -------------------------
-   Final notes in JS console
-   ------------------------- */
-console.log('Vault Heist initialized. Controls: WASD / arrows or joystick. [E] interact, [Space] fire, [V] vault.');
-
+// console note
+console.log('Part1 loaded — scene and controls initialized.');
 </script>
-
 </body>
 </html>
+<!-- Part2: Vault Dial Effects, Particles, Explosions (to append to Part1)
+
+  Usage: This file contains a single <script> block meant to be pasted into the <body>
+  of the Part1 HTML (after Part1's main script) or included thereafter. It *assumes*
+  the global variables and functions from Part1 exist (state, scene, renderer, camera,
+  playerMesh, vaultModal, currentVault, sfx, gsap, THREE, etc.).
+
+  It provides:
+  - Fancy dial animations (GSAP-driven) and haptic feedback
+  - Particle system (sparkles, smoke) using Three.Points and sprite textures
+  - Explosion sequence with light flash, camera shake, debris sprites
+  - Hook functions: enhancedOpenVaultModal(vault) and attemptOpenVaultEnhanced()
+  - Integration notes at the bottom for merging into Part1
+
+-->
+
+<script>
+/* Part2: Vault Animations & Particles
+   - Designed to integrate with Part1. Paste into your existing HTML after Part1 code.
+   - If you're running Part1 from the canvas textdoc, open browser devtools console to see logs.
+*/
+(function(){
+  if (typeof THREE === 'undefined' || typeof gsap === 'undefined') {
+    console.warn('Part2: Required libraries not present (THREE, gsap). Make sure Part1 includes them.');
+    return;
+  }
+
+  // --- Configurable parameters ---
+  const PART2 = {
+    sparkCount: 180,
+    smokeCount: 40,
+    explosionRadius: 18,
+    dialSpinDuration: 0.7,
+    dialSettleDuration: 0.6,
+    cameraShake: 0.8,
+    particleLifetime: 1.6
+  };
+
+  // --- Utility: create a canvas sprite texture with radial gradient ---
+  function makeCircleSprite(size, innerColor, outerColor) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, innerColor);
+    grad.addColorStop(0.6, outerColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(size/2,size/2,size/2,0,Math.PI*2); ctx.fill();
+    return new THREE.CanvasTexture(c);
+  }
+
+  // Sprite textures used for sparks / smoke / debris
+  const sparkTex = makeCircleSprite(64, 'rgba(255,255,200,1)', 'rgba(255,140,0,0.9)');
+  const smokeTex = makeCircleSprite(128, 'rgba(180,180,180,0.85)', 'rgba(60,60,60,0.6)');
+  const debrisTex = makeCircleSprite(48, 'rgba(160,160,180,1)', 'rgba(60,60,60,0.85)');
+
+  // --- Particle systems ---
+  const particleGroup = new THREE.Group(); particleGroup.frustumCulled = false; scene.add(particleGroup);
+
+  // Sparks (fast, short-lived)
+  function createSparks(originPosWorld, colorHex=0xffc857) {
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(PART2.sparkCount * 3);
+    const velocities = new Float32Array(PART2.sparkCount * 3);
+    const sizes = new Float32Array(PART2.sparkCount);
+    for (let i=0;i<PART2.sparkCount;i++){
+      positions[i*3+0] = originPosWorld.x + (Math.random()-0.5) * 2;
+      positions[i*3+1] = originPosWorld.y + 2 + Math.random()*4;
+      positions[i*3+2] = originPosWorld.z + (Math.random()-0.5) * 2;
+      const speed = 5 + Math.random()*30;
+      const ang = Math.random()*Math.PI*2; const elev = Math.random()*0.8 + 0.2;
+      velocities[i*3+0] = Math.cos(ang) * speed * (0.6 + Math.random()*0.6);
+      velocities[i*3+1] = Math.sin(elev) * speed * (0.3 + Math.random());
+      velocities[i*3+2] = Math.sin(ang) * speed * (0.6 + Math.random()*0.6);
+      sizes[i] = 6 + Math.random()*8;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
+    geom.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({ map: sparkTex, sizeAttenuation: true, transparent:true, depthWrite:false });
+    mat.color = new THREE.Color(colorHex);
+    const points = new THREE.Points(geom, mat);
+    points.userData = { birth: performance.now()/1000, life: PART2.particleLifetime, velocities, type:'spark' };
+    particleGroup.add(points);
+    // schedule fade/removal
+    setTimeout(()=>{
+      // fading handled in tick
+    }, PART2.particleLifetime*1000 + 100);
+  }
+
+  // Smoke (slow-moving, larger)
+  function createSmoke(originPosWorld) {
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(PART2.smokeCount * 3);
+    const velocities = new Float32Array(PART2.smokeCount * 3);
+    const sizes = new Float32Array(PART2.smokeCount);
+    for (let i=0;i<PART2.smokeCount;i++){
+      positions[i*3+0] = originPosWorld.x + (Math.random()-0.5) * 3;
+      positions[i*3+1] = originPosWorld.y + 1 + Math.random()*2;
+      positions[i*3+2] = originPosWorld.z + (Math.random()-0.5) * 3;
+      velocities[i*3+0] = (Math.random()-0.5) * 2;
+      velocities[i*3+1] = 2 + Math.random()*6;
+      velocities[i*3+2] = (Math.random()-0.5) * 2;
+      sizes[i] = 18 + Math.random()*36;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
+    geom.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({ map: smokeTex, sizeAttenuation:true, transparent:true, opacity:0.9, depthWrite:false });
+    mat.color = new THREE.Color(0xcccccc);
+    const points = new THREE.Points(geom, mat);
+    points.userData = { birth: performance.now()/1000, life: 2.6, velocities, type:'smoke' };
+    particleGroup.add(points);
+  }
+
+  // Debris sprites (larger bits)
+  function createDebris(originPosWorld, count=12) {
+    const group = new THREE.Group();
+    for (let i=0;i<count;i++){
+      const s = 3 + Math.random()*8;
+      const mat = new THREE.SpriteMaterial({ map: debrisTex, transparent:true });
+      const sp = new THREE.Sprite(mat);
+      sp.scale.set(s, s, 1);
+      sp.position.set(originPosWorld.x + (Math.random()-0.5)*4, originPosWorld.y + Math.random()*6, originPosWorld.z + (Math.random()-0.5)*4);
+      sp.userData = { vel: new THREE.Vector3((Math.random()-0.5)*8, 4 + Math.random()*8, (Math.random()-0.5)*8), life: 2.2, birth: performance.now()/1000 };
+      group.add(sp);
+    }
+    particleGroup.add(group);
+  }
+
+  // Tick updater for particles — called each frame
+  const _origUpdate = window._part2_update || null;
+  function updateParticles(dt){
+    const now = performance.now()/1000;
+    const removes = [];
+    for (let i=particleGroup.children.length-1;i>=0;i--){
+      const obj = particleGroup.children[i];
+      if (obj.type === 'Points'){
+        const ud = obj.userData; const birth = ud.birth; const life = ud.life; const age = now - birth;
+        const posAttr = obj.geometry.attributes.position; const velAttr = obj.geometry.attributes.aVelocity; const sizeAttr = obj.geometry.attributes.size;
+        if (!posAttr) continue;
+        for (let p=0;p<posAttr.count;p++){
+          posAttr.array[p*3+0] += velAttr.array[p*3+0] * dt;
+          posAttr.array[p*3+1] += velAttr.array[p*3+1] * dt;
+          posAttr.array[p*3+2] += velAttr.array[p*3+2] * dt;
+          // gravity on y
+          velAttr.array[p*3+1] -= 9.8 * 0.6 * dt;
+          // slowly reduce velocity
+          velAttr.array[p*3+0] *= (1 - 0.12*dt);
+          velAttr.array[p*3+2] *= (1 - 0.12*dt);
+        }
+        posAttr.needsUpdate = true; velAttr.needsUpdate = true; if(sizeAttr) sizeAttr.needsUpdate = true;
+        // fade over life
+        const t = clamp(1 - (age / life), 0,1);
+        obj.material.opacity = t;
+        if (age > life) { removes.push(i); }
+      } else if (obj.type === 'Group'){
+        // debris group
+        for (let k=obj.children.length-1;k>=0;k--){
+          const sp = obj.children[k]; const ud = sp.userData; const age = now - ud.birth;
+          ud.vel.y -= 9.8 * 0.9 * dt; // gravity
+          sp.position.addScaledVector(ud.vel, dt);
+          sp.material.opacity = clamp(1 - age/ud.life, 0,1);
+          if (age > ud.life) { obj.remove(sp); }
+        }
+        if (obj.children.length === 0) removes.push(i);
+      }
+    }
+    for (const idx of removes) particleGroup.remove(particleGroup.children[idx]);
+  }
+
+  // Integrate the particle tick into the existing main loop. We will attach a function to window
+  // that Part1's animate loop should call. If Part1's animate doesn't call it, we'll monkey-patch
+  // requestAnimationFrame to ensure regular updates.
+  window._part2_update = function(dt){ updateParticles(dt); };
+
+  // If Part1 has animate() accessible, patch it to call our update as well.
+  // But to avoid intrusive edits, expose a function that the Part1 loop can call:
+  if (!window.__part2_hooked) {
+    // attempt to detect Part1's animate loop by a known global 'animate' function
+    if (typeof animate === 'function') {
+      const originalAnimate = animate;
+      window.animate = function(now){
+        originalAnimate(now);
+        const dt = (performance.now() - (window._part2_last || performance.now())) / 1000;
+        window._part2_last = performance.now();
+        try{ window._part2_update(dt); }catch(e){ /* ignore */ }
+      };
+      console.info('Part2: Patched global animate() to include particle updates.');
+    } else {
+      // If animate is not detectable, leave _part2_update for Part1 to call
+      console.info('Part2: Could not find global animate(); expose window._part2_update(dt) for Part1 to call.');
+    }
+    window.__part2_hooked = true;
+  }
+
+  // --- Dial animation hooks ---
+  // We'll replace the simple dial-click behavior with a richer version.
+  const originalOpenVaultModal = window.openVaultModal || null;
+  function enhancedOpenVaultModal(vaultObj) {
+    // call original to create UI elements if present
+    if (typeof originalOpenVaultModal === 'function') originalOpenVaultModal(vaultObj);
+    // assume .dial elements were created; enhance them
+    setTimeout(()=>{
+      const dials = document.querySelectorAll('.dial');
+      if (!dials || dials.length === 0) return;
+      // initial spin in animation to hint mechanical feel
+      dials.forEach((d, idx)=>{
+        d.style.transformOrigin = '50% 50%';
+        // spin with stagger
+        gsap.fromTo(d, { rotation: 0, scale: 1 }, { rotation: Math.PI*2.2 * (idx%2?1:-1), duration: PART2.dialSpinDuration, ease:'power3.out', onComplete: ()=>{
+          // subtle settle
+          gsap.to(d, { rotation: 0, duration: PART2.dialSettleDuration, ease:'elastic.out(1,0.6)' });
+        }});
+      });
+
+      // create a 'mechanical clicking' animation synced when the player clicks digits
+      document.querySelectorAll('.dial').forEach((d, idx)=>{
+        d.addEventListener('click', ()=>{
+          // tactile pop
+          gsap.fromTo(d, { y:-2 }, { y:0, duration:0.12, ease:'power1.out' });
+          // pulse
+          gsap.fromTo(d, { scale:1.12 }, { scale:1, duration:0.22, ease:'circ.out' });
+          sfx.dialTick.play();
+          // small ring of sparks at dial position in world coords
+          const rect = d.getBoundingClientRect();
+          const screenX = rect.left + rect.width/2, screenY = rect.top + rect.height/2;
+          const world = screenToWorld(screenX, screenY);
+          createSparks(world, 0xfff2b2);
+        });
+      });
+
+      // big visual flourish when a single digit becomes correct
+      // we'll monitor mutations of 'correct' class
+      dials.forEach(d=>{
+        const obs = new MutationObserver((mut)=>{
+          for (const m of mut) {
+            if (m.attributeName === 'class') {
+              if (d.classList.contains('correct')) {
+                // tiny flash + particles
+                const rect = d.getBoundingClientRect();
+                const world = screenToWorld(rect.left + rect.width/2, rect.top + rect.height/2);
+                createSparks(world, 0xffffff);
+                createSmoke(world);
+                // scale pop
+                gsap.fromTo(d, { scale: 0.9 }, { scale: 1.08, duration:0.28, yoyo:true, repeat:1, ease:'sine.inOut' });
+              }
+            }
+          }
+        });
+        obs.observe(d, { attributes: true });
+      });
+
+    }, 40);
+  }
+
+  // replace/hook openVaultModal if present
+  if (typeof window.openVaultModal === 'function') {
+    window.openVaultModal = function(v){ enhancedOpenVaultModal(v); };
+    console.info('Part2: Hooked openVaultModal for enhanced dial effects.');
+  } else {
+    window.enhancedOpenVaultModal = enhancedOpenVaultModal;
+    console.info('Part2: original openVaultModal not found; exposed enhancedOpenVaultModal for manual use.');
+  }
+
+  // Helper: convert screen space to approximate world position on ground (y=0 plane)
+  function screenToWorld(screenX, screenY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = ( (screenX - rect.left) / rect.width ) * 2 - 1;
+    const y = - ( (screenY - rect.top) / rect.height ) * 2 + 1;
+    const vec = new THREE.Vector3(x,y,0.5).unproject(camera);
+    // cast a ray down to y=0 (ground) to find world intersection
+    const dir = vec.sub(camera.position).normalize();
+    const distance = (0 - camera.position.y) / dir.y;
+    const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+    return pos;
+  }
+
+  // Enhanced attempt open: if success -> big explosion, otherwise small punishments
+  function attemptOpenVaultEnhanced(vaultObj) {
+    if (!vaultObj) { console.warn('attemptOpenVaultEnhanced: vault missing'); return; }
+    // read current dials
+    const inputs = Array.from(document.querySelectorAll('.dial')).map(d=>parseInt(d.textContent));
+    let correctCount = 0; for (let i=0;i<4;i++) if (inputs[i] === vaultObj.dialSolution[i]) correctCount++;
+    vaultObj.attempts = (vaultObj.attempts || 0) + 1;
+    if (correctCount === 4) {
+      // success: big reward and spectacle
+      vaultObj.locked = false;
+      state.player.money += vaultObj.reward;
+      sfx.success.play();
+      notify(`金庫解錠！ ${fmtMoney(vaultObj.reward)} を獲得`);
+      // big explosion at building
+      const b = state.buildings[vaultObj.buildingIndex];
+      const world = new THREE.Vector3(b.x - state.mapSize/2, 4, b.z - state.mapSize/2);
+      triggerBigExplosion(world);
+      // close modal
+      const vm = document.getElementById('vaultModal'); vm.classList.remove('open'); vm.setAttribute('aria-hidden','true');
+    } else {
+      sfx.beep.play();
+      notify(`${correctCount} 桁一致。小さな反応があった。`);
+      // small local spark and smoke
+      const b = state.buildings[vaultObj.buildingIndex];
+      const world = new THREE.Vector3(b.x - state.mapSize/2, 2, b.z - state.mapSize/2);
+      createSparks(world, 0xffe08a);
+      createSmoke(world);
+      // if attempts exceed threshold, spawn police and preview explosion chance
+      if (vaultObj.attempts >= 4) {
+        notify('何度も試行しているため、近隣に警察が出動しました。');
+        spawnPoliceNearPlayer();
+      }
+    }
+  }
+
+  // Expose a safer API: replace attempt handler
+  const origAttemptHandler = document.getElementById('attemptOpen') && document.getElementById('attemptOpen').onclick;
+  document.getElementById('attemptOpen') && document.getElementById('attemptOpen').addEventListener('click', ()=>{
+    // find selected vault from previous logic (Part1 stored it in currentVault)
+    if (typeof currentVault === 'undefined' || currentVault === null) { notify('金庫が選択されていません'); return; }
+    attemptOpenVaultEnhanced(currentVault);
+  });
+
+  // Big explosion sequence
+  function triggerBigExplosion(worldPos) {
+    // 1) flash light
+    const flash = new THREE.PointLight(0xfff2c1, 6, 280, 2);
+    flash.position.copy(worldPos).add(new THREE.Vector3(0,6,0)); scene.add(flash);
+    gsap.to(flash, { intensity: 0.002, duration: 1.6, ease:'expo.out', onComplete: ()=> scene.remove(flash) });
+
+    // 2) outward sparks + smoke + debris
+    createSparks(worldPos, 0xffdd88);
+    createSmoke(worldPos);
+    createDebris(worldPos, 26);
+
+    // 3) camera shake
+    const original = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    gsap.to(camera.position, { x: camera.position.x + (Math.random()-0.5)*PART2.cameraShake*30, y: camera.position.y + (Math.random()-0.5)*PART2.cameraShake*10, z: camera.position.z + (Math.random()-0.5)*PART2.cameraShake*30, duration:0.18, ease:'power2.out', yoyo:true, repeat:3, onComplete: ()=>{
+      gsap.to(camera.position, { x: original.x, y: original.y, z: original.z, duration:0.4, ease:'power2.out' });
+    }});
+
+    // 4) animate building (shake + color flash) if building exists at that worldPos
+    const hitBuilding = buildingGroup.children.find(m=>Math.abs(m.position.x - worldPos.x) < 40 && Math.abs(m.position.z - worldPos.z) < 40);
+    if (hitBuilding) {
+      const origColor = hitBuilding.material.color.clone();
+      gsap.to(hitBuilding.scale, { x:1.06, y:1.02, z:1.06, duration:0.12, yoyo:true, repeat:2 });
+      gsap.to(hitBuilding.material.color, { r:1, g:0.85, b:0.45, duration:0.08, yoyo:true, repeat:2, onComplete: ()=>{ hitBuilding.material.color.copy(origColor); } });
+    }
+  }
+
+  // Hook up: expose functions to window so Part1 or devs can call directly
+  window.PART2 = window.PART2 || {};
+  window.PART2.createSparks = createSparks;
+  window.PART2.createSmoke = createSmoke;
+  window.PART2.createDebris = createDebris;
+  window.PART2.triggerBigExplosion = triggerBigExplosion;
+  window.PART2.attemptOpenVaultEnhanced = attemptOpenVaultEnhanced;
+  window.PART2.enhancedOpenVaultModal = enhancedOpenVaultModal;
+
+  console.info('Part2: Vault effects installed. Use PART2.enhancedOpenVaultModal(vault) to open enhanced UI, or open a vault via existing UI which is hooked.');
+
+})();
+</script>
+
+<!-- Integration notes:
+  - Paste this part AFTER Part1's <script> so global vars like `scene`, `camera`, `state`,
+    `openVaultModal`, `currentVault`, and `attemptOpen` exist.
+  - If Part1's main loop 'animate' cannot be detected/patched automatically, add the
+    following line inside Part1's animate(dt) loop after computing dt:
+       if (window._part2_update) window._part2_update(dt);
+
+  - If you want the enhanced modal to open automatically instead of the old one:
+       window.openVaultModal = window.PART2.enhancedOpenVaultModal;
+
+  - This part intentionally avoids loading heavy external assets (GLTFs, big textures)
+    — that will be added in Part5. It uses runtime-generated canvas textures for particles.
+
+  - Next: Part3 will implement projectile visuals & hit detection (弾の可視化) and
+    police AI improvements.
+-->
+<!-- Part3: Projectiles, Police AI, Building Interior (Integration for Part1+Part2)
+
+  Description:
+  - Implements visible projectile meshes with ballistic motion and life-time.
+  - Implements accurate hit detection (bounding sphere for NPCs and player).
+  - Enhances police AI: patrol, chase, aim, fire with visible bullets.
+  - Implements building 'enter' -> interior scene switch (simple interior with a vault model placeholder).
+  - Adds Save/Load UI overlay and Campaign difficulty presets that affect police behavior.
+
+  Integration: Paste this code after Part1 and Part2 scripts. It assumes globals from Part1/Part2 exist
+  (state, scene, camera, renderer, buildingGroup, particleGroup, spawnPoliceNearPlayer(), PART2, etc.).
+
+-->
+
+<script>
+(function(){
+  // Sanity checks
+  if (typeof THREE === 'undefined' || typeof state === 'undefined') {
+    console.warn('Part3: Required globals missing. Ensure Part1 is loaded.');
+    return;
+  }
+
+  // -----------------------------
+  // CONFIGS & DIFFICULTY
+  // -----------------------------
+  const DIFFICULTY = {
+    EASY: { policeSpawnInterval: 12, policeAimError: 0.28, policeHP: 90, policeAccuracyMult: 0.7 },
+    NORMAL: { policeSpawnInterval: 7, policeAimError: 0.18, policeHP: 110, policeAccuracyMult: 1.0 },
+    HARD: { policeSpawnInterval: 4, policeAimError: 0.08, policeHP: 150, policeAccuracyMult: 1.35 }
+  };
+  // default
+  state.campaign = state.campaign || { difficulty: 'NORMAL' };
+
+  // expose a UI to change difficulty and save/load
+  function createSaveLoadUI(){
+    const ui = document.createElement('div'); ui.style.position='fixed'; ui.style.left='14px'; ui.style.top='12px'; ui.style.zIndex=9999;
+    ui.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="vh_difficulty">
+          <option value="EASY">EASY</option>
+          <option value="NORMAL" selected>NORMAL</option>
+          <option value="HARD">HARD</option>
+        </select>
+        <button id="vh_save" class="btn">Save All</button>
+        <button id="vh_load" class="btn">Load</button>
+        <button id="vh_reset" class="btn">Reset</button>
+      </div>
+    `;
+    document.body.appendChild(ui);
+    document.getElementById('vh_difficulty').value = state.campaign.difficulty || 'NORMAL';
+    document.getElementById('vh_difficulty').addEventListener('change', (e)=>{ state.campaign.difficulty = e.target.value; notify('難易度: ' + e.target.value); });
+    document.getElementById('vh_save').addEventListener('click', ()=>{ saveFullGame(); });
+    document.getElementById('vh_load').addEventListener('click', ()=>{ loadFullGame(); buildWorldVisuals(); drawMinimap(); notify('ロード完了'); });
+    document.getElementById('vh_reset').addEventListener('click', ()=>{ localStorage.removeItem('vault_heist_full_save'); notify('セーブデータを削除しました'); });
+  }
+
+  function saveFullGame(){
+    const save = {
+      state: state,
+      buildings: state.buildings,
+      vaults: state.vaults,
+      player: state.player,
+      time: Date.now()
+    };
+    try{ localStorage.setItem('vault_heist_full_save', JSON.stringify(save)); notify('ゲームを保存しました'); }catch(e){ notify('保存失敗: ' + e.message); }
+  }
+  function loadFullGame(){
+    try{
+      const raw = localStorage.getItem('vault_heist_full_save'); if(!raw){ notify('セーブが見つかりません'); return; }
+      const parsed = JSON.parse(raw);
+      // merge into global state carefully
+      state.player = parsed.player || state.player;
+      state.buildings = parsed.buildings || state.buildings;
+      state.vaults = parsed.vaults || state.vaults;
+      state.campaign = parsed.state.campaign || state.campaign;
+      notify('ロード完了');
+    }catch(e){ notify('ロード失敗: ' + e.message); }
+  }
+  createSaveLoadUI();
+
+  // -----------------------------
+  // Projectiles: visible bullets + pooling
+  // -----------------------------
+  const bulletPool = [];
+  const activeBullets = [];
+  const MAX_BULLETS = 80;
+
+  function createBulletMesh(){
+    const geo = new THREE.CylinderGeometry(0.6, 0.6, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({ color:0xffe59e });
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.x = Math.PI/2; m.frustumCulled = false;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  }
+  for (let i=0;i<MAX_BULLETS;i++) bulletPool.push(createBulletMesh());
+
+  function spawnBullet(origin, direction, speed=680, owner='player'){ // direction unit vector
+    let bmesh = bulletPool.find(b=>!b.visible);
+    if(!bmesh){ bmesh = createBulletMesh(); }
+    bmesh.visible = true;
+    bmesh.position.copy(origin);
+    bmesh.userData = { vel: direction.clone().multiplyScalar(speed), life: 3.0, owner, birth: performance.now()/1000 };
+    activeBullets.push(bmesh);
+    // small muzzle particle
+    if (window.PART2 && window.PART2.createSparks) window.PART2.createSparks(origin, 0xffe6b2);
+  }
+
+  function updateBullets(dt){
+    const now = performance.now()/1000;
+    for (let i=activeBullets.length-1;i>=0;i--){
+      const b = activeBullets[i]; const ud = b.userData; const age = now - ud.birth;
+      // simple motion with gravity
+      const dv = ud.vel.clone().multiplyScalar(dt);
+      ud.vel.y -= 9.8 * 0.2 * dt;
+      b.position.add(dv.clone().multiplyScalar(0.001)); // scale down for game units
+      // rotate for effect
+      b.rotateZ(0.6);
+      // collision test: check police first
+      if (ud.owner === 'player'){
+        for (let j=state.police.length-1;j>=0;j--){
+          const p = state.police[j];
+          const dx = p.x - (b.position.x + state.mapSize/2); // note: building coords offset
+          const dz = p.z - (b.position.z + state.mapSize/2);
+          const dist = Math.hypot(dx,dz);
+          if (dist < 12) {
+            // hit!
+            p.hp -= rand(24,46);
+            // visual impact
+            const world = new THREE.Vector3(b.position.x, b.position.y, b.position.z);
+            if (window.PART2) { window.PART2.createDebris(world, 6); window.PART2.createSparks(world); }
+            // remove bullet
+            b.visible = false; activeBullets.splice(i,1); bulletPool.push(b);
+            break;
+          }
+        }
+      } else if (ud.owner === 'police'){
+        // hit player?
+        const dx = state.player.x - (b.position.x + state.mapSize/2);
+        const dz = state.player.z - (b.position.z + state.mapSize/2);
+        const dist = Math.hypot(dx,dz);
+        if (dist < 14){ state.player.hp -= rand(6,18); notify('被弾: HP -' + rand(6,18)); b.visible=false; activeBullets.splice(i,1); bulletPool.push(b); }
+      }
+      if (age > ud.life){ b.visible=false; activeBullets.splice(i,1); bulletPool.push(b); }
+    }
+  }
+
+  // -----------------------------
+  // Police AI: patrol, chase, shoot
+  // -----------------------------
+  // We'll represent police as plain JS objects in state.police with x,z,hp,speed,behavior,target
+
+  function spawnPoliceAt(x,z){
+    const p = { x, z, hp: DIFFICULTY[state.campaign.difficulty || 'NORMAL'].policeHP, speed: 1.3 + Math.random()*0.8, id: Date.now()+Math.random(), behavior:'idle', target:null, lastFire:0 };
+    state.police.push(p);
+    notify('警察が出動しました');
+  }
+
+  // override earlier spawnPoliceNearPlayer to use our spawn
+  window.spawnPoliceNearPlayer = function() {
+    const angle = Math.random()*Math.PI*2; const dist = 260; const px = state.player.x + Math.cos(angle)*dist; const pz = state.player.z + Math.sin(angle)*dist;
+    spawnPoliceAt(px,pz);
+  };
+
+  function updatePolice(dt){
+    const diffConfig = DIFFICULTY[state.campaign.difficulty || 'NORMAL'];
+    for (let i=state.police.length-1;i>=0;i--){
+      const pol = state.police[i];
+      // basic behavior: if far from player, move toward player slowly; if close, aim and fire
+      const dx = state.player.x - pol.x; const dz = state.player.z - pol.z; const dist = Math.hypot(dx,dz);
+      // line of sight simplification: no world obstacles
+      if (dist > 160) { // approach
+        const nx = dx/dist, nz = dz/dist; pol.x += nx * pol.speed * dt * 12; pol.z += nz * pol.speed * dt * 12; pol.behavior = 'chase';
+      } else {
+        // within firing range
+        pol.behavior = 'engage';
+        // aim with some random error based on difficulty
+        const aimNoise = (Math.random()-0.5) * diffConfig.policeAimError * 200;
+        const aimDir = new THREE.Vector3(dx + aimNoise, 0, dz + aimNoise).normalize();
+        // fire occasionally based on distance
+        if (Math.random() < 0.015 * dt * diffConfig.policeAccuracyMult) {
+          // spawn bullet from police position toward player
+          const worldPos = new THREE.Vector3(pol.x - state.mapSize/2, 6, pol.z - state.mapSize/2);
+          const dir = new THREE.Vector3(state.player.x - pol.x + (Math.random()-0.5)*5, -2, state.player.z - pol.z + (Math.random()-0.5)*5).normalize();
+          // create visible bullet with owner police
+          spawnBullet(worldPos, dir, 520, 'police');
+        }
+      }
+      // die if hp <=0
+      if (pol.hp <= 0) { state.police.splice(i,1); notify('警官排除'); if (Math.random()<0.6) { state.player.money += rand(200,1200); notify('奪った金を取得'); } }
+    }
+  }
+
+  // -----------------------------
+  // Player fire: spawn visible projectile
+  // -----------------------------
+  function playerFireVisible(){
+    if (!state.player.guns || state.player.guns.pistol <= 0) { notify('銃が無い'); return; }
+    // origin approx at player mesh
+    const origin = new THREE.Vector3(playerMesh.position.x, playerMesh.position.y + 6, playerMesh.position.z);
+    // direction from camera forward
+    const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+    spawnBullet(origin, dir, 820, 'player');
+    if (window.PART2 && window.PART2.createSparks) window.PART2.createSparks(origin, 0xfff2bb);
+  }
+
+  // attach to existing fire control
+  const fireBtn = document.getElementById('btnFire');
+  fireBtn && fireBtn.addEventListener('click', ()=>{ playerFireVisible(); });
+  // also bind space
+  window.addEventListener('keydown', (e)=>{ if (e.code === 'Space') playerFireVisible(); });
+
+  // -----------------------------
+  // Building interior / room transition
+  // -----------------------------
+  // We'll implement a very simple interior system: when player 'enters' building, we push a new small scene
+  // and display a room with a vault mesh. Player can exit to return to main scene.
+
+  let interiorScene = null; let interiorCamera = null; let inInterior = false; let interiorTargetBuilding = null;
+
+  function createInteriorForBuilding(bIndex){
+    const b = state.buildings[bIndex]; if(!b) return null;
+    // create a lightweight interior scene
+    const s = new THREE.Scene(); s.background = new THREE.Color(0x0a0a0a);
+    // camera
+    const cam = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+    cam.position.set(0, 36, 70); cam.lookAt(0,16,0);
+    // lights
+    const amb = new THREE.AmbientLight(0x999999, 0.6); s.add(amb);
+    const spot = new THREE.SpotLight(0xffffff, 0.9); spot.position.set(40,120,60); spot.angle=0.8; s.add(spot);
+    // floor
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 80), new THREE.MeshStandardMaterial({ color:0x222226 })); floor.rotation.x = -Math.PI/2; s.add(floor);
+    // vault mesh (placeholder)
+    const vaultGeom = new THREE.BoxGeometry(32, 28, 20); const vaultMat = new THREE.MeshStandardMaterial({ color:0x2ecc71, metalness:0.9, roughness:0.2 });
+    const vault = new THREE.Mesh(vaultGeom, vaultMat); vault.position.set(0, 14, 0); s.add(vault);
+
+    // door / UI overlay for exit
+    return { scene: s, camera: cam, vaultMesh: vault };
+  }
+
+  function enterBuilding(bIndex){
+    if (inInterior) return; interiorTargetBuilding = bIndex;
+    interiorScene = createInteriorForBuilding(bIndex); if(!interiorScene) return;
+    inInterior = true;
+    // save external camera and replace render target in animate loop (we will handle switching)
+    document.getElementById('vaultModal') && (document.getElementById('vaultModal').style.display='none');
+    // create overlay exit button
+    const exitBtn = document.createElement('button'); exitBtn.textContent='退出'; exitBtn.className='btn'; exitBtn.id='vh_exit_interior'; exitBtn.style.position='fixed'; exitBtn.style.right='12px'; exitBtn.style.top='72px'; exitBtn.style.zIndex=99999; document.body.appendChild(exitBtn);
+    exitBtn.addEventListener('click', ()=>{ leaveInterior(); exitBtn.remove(); });
+    notify('建物内に侵入しました。金庫を調べてダイヤルを回せ。');
+  }
+
+  function leaveInterior(){ inInterior = false; interiorScene = null; interiorTargetBuilding = null; notify('外に戻りました'); }
+
+  // Hook interact to allow entering building if close
+  const origInteract = window.tryInteractNearby || null;
+  window.tryInteractNearby = function(){
+    // find nearest building within small range
+    let nearest = null, nd = 9999, idx = -1;
+    state.buildings.forEach((b,i)=>{ const d=Math.hypot(b.x-state.player.x, b.z-state.player.z); if(d<nd){ nd=d; nearest=b; idx=i; } });
+    if (nearest && nd < 26){ // enter
+      enterBuilding(idx);
+    } else {
+      if (origInteract) origInteract(); else notify('近くに入り口はない');
+    }
+  };
+
+  // -----------------------------
+  // Integrate into main loop: add update function which Part1's animate should call
+  // -----------------------------
+  window._part3_update = function(dt){
+    // dt in seconds
+    try{
+      updateBullets(dt);
+      updatePolice(dt);
+      // if interior active, animate interior components
+      if (inInterior && interiorScene){
+        // rotate vault slowly
+        interiorScene.children.forEach(c=>{ if (c === interiorScene.vaultMesh) c.rotation.y += dt * 0.26; });
+      }
+    }catch(e){ console.error('Part3 update error', e); }
+  };
+
+  // Attempt to patch animate if present and not already patched
+  if (typeof animate === 'function' && !window.__part3_hooked) {
+    const orig = animate;
+    window.animate = function(now){ orig(now); const dt = (performance.now() - (window._part3_last || performance.now())) / 1000; window._part3_last = performance.now(); try{ if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); }catch(e){} };
+    window.__part3_hooked = true;
+    console.info('Part3: Patched global animate to call part2/part3 updates.');
+  } else {
+    console.info('Part3: Expose window._part3_update(dt) for Part1 animate loop to call.');
+  }
+
+  // If Part1's animate loop supports switching render target to interior, we can request a draw
+  // We'll add a global render override that Part1 can call inside its animate loop:
+  window._vh_render = function() {
+    if (inInterior && interiorScene) {
+      // render interior scene
+      renderer.render(interiorScene.scene || interiorScene, (interiorScene.camera || interiorCamera));
+    } else {
+      // default: Part1's render handled by its animate
+    }
+  };
+
+  // -----------------------------
+  // Helpful debug & auto-respawn police based on 'heat'
+  // -----------------------------
+  let policeSpawnTimer = 0;
+  function autoPoliceSpawner(dt){
+    policeSpawnTimer -= dt;
+    const cfg = DIFFICULTY[state.campaign.difficulty || 'NORMAL'];
+    if (policeSpawnTimer <= 0) {
+      policeSpawnTimer = cfg.policeSpawnInterval * (0.6 + Math.random()*0.8);
+      if (state.heat > 6 || Math.random() < 0.15) spawnPoliceNearPlayer();
+    }
+  }
+
+  // Add hooked update for auto spawner
+  const orig_part3 = window._part3_update;
+  window._part3_update = function(dt){ if (orig_part3) orig_part3(dt); autoPoliceSpawner(dt); };
+
+  // -----------------------------
+  // Final integration note: ensure Part1's animate does:
+  //   const dt = (now - lastTime)/1000;
+  //   if (window._part2_update) window._part2_update(dt);
+  //   if (window._part3_update) window._part3_update(dt);
+  //   if (window._vh_render) window._vh_render();
+  // This file will attempt to patch animate automatically, but if your Part1 has a
+  // different structure, call the functions manually.
+
+  console.info('Part3 loaded: Visible projectiles, police AI, interiors, save/load UI integrated.');
+})();
+</script>
+
+<!-- Notes for merging into single file:
+  - This Part3 expects Part1 animate to be called continuously. If animate was patched by Part2
+    earlier, Part3 will attempt to patch again but remains safe.
+  - To enable interior rendering fully, modify Part1's render call in animate to render either main scene
+    or interior via window._vh_render as described above. Example inside Part1 animate:
+
+    if (window._vh_render && inInterior) { window._vh_render(); } else { renderer.render(scene, camera); }
+
+  - Bullet coordinates: There is a small coordinate offset because bullets are positioned in Three.js
+    world coordinates while state.police use map-space (0..mapSize). We compensated accordingly.
+
+  - Performance: Bullet pool and low-poly meshes used for efficiency. Tweak MAX_BULLETS and particle counts
+    in PART2 and here based on device capability.
+
+  - Next steps (optional): Attach health bars above police, use GLTF models for police and vault for realism,
+    implement cover system for police, add interior object interactions (safe cracking inside room).
+-->
