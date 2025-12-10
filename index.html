@@ -3,63 +3,33 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Vault Heist — Part1 (Core Scene & Controls)</title>
+<title>Vault Heist — Part1 (Fixed)</title>
 
-<!-- Stable CDNs chosen for broad compatibility (including Safari/iPad) -->
+<!-- Stable three.js + controls -->
 <script src="https://unpkg.com/three@0.164.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.164.0/examples/js/controls/PointerLockControls.js"></script>
 <script src="https://unpkg.com/three@0.164.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nipplejs@0.9.0/dist/nipplejs.min.js"></script>
 
 <style>
-  /* =========================
-     Part1: layout & base styles
-     ========================= */
-  :root{--ui-bg:rgba(10,12,16,0.72);--accent:#ffde59}
-  html,body{height:100%;margin:0;padding:0;background:#06101a;color:#e8eef6;font-family:Inter, system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif}
+  html,body{height:100%;margin:0;padding:0;background:#07101a;color:#eaeaea;font-family:system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif}
   #app{position:fixed;inset:0;display:flex;flex-direction:column}
-  header{height:56px;display:flex;align-items:center;padding:8px 12px;background:linear-gradient(90deg,#07101a,#0b1220);box-shadow:0 6px 18px rgba(0,0,0,0.45);z-index:40}
-  header h1{margin:0;font-size:15px}
-  .controls{margin-left:auto;display:flex;gap:8px;align-items:center}
-  .btn{appearance:none;border:none;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);color:inherit;cursor:pointer}
-  .btn:active{transform:translateY(1px)}
-
+  header{height:56px;padding:8px 12px;background:linear-gradient(90deg,#07101a,#0b1220);display:flex;align-items:center}
+  header h1{margin:0;font-size:16px}
   #sceneWrap{flex:1;position:relative;overflow:hidden}
-  canvas#main3d{display:block;width:100%;height:100%;background:linear-gradient(180deg,#0b2330,#06101a)}
-
-  /* HUD */
-  #hud{position:absolute;right:12px;top:76px;width:280px;background:var(--ui-bg);border-radius:10px;padding:10px;backdrop-filter:blur(6px);z-index:60;border:1px solid rgba(255,255,255,0.03)}
-  #minimap{position:absolute;left:12px;top:76px;width:160px;height:160px;background:rgba(2,6,12,0.6);border-radius:8px;padding:8px;z-index:60;border:1px solid rgba(255,255,255,0.03)}
-  #controlsUI{position:absolute;left:12px;bottom:12px;display:flex;gap:12px;align-items:flex-end;z-index:70}
-  .joystick-wrap{width:120px;height:120px;border-radius:999px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center}
-  .stick{width:54px;height:54px;border-radius:999px;background:rgba(255,255,255,0.06)}
-
-  /* small notification area */
-  #notifWrap{position:absolute;right:12px;bottom:12px;z-index:90;display:flex;flex-direction:column-reverse;gap:8px}
-  .notif{background:rgba(0,0,0,0.6);padding:8px 10px;border-radius:10px;color:#e9eef6;font-size:13px}
-
-  /* vault modal (placeholder in Part1) */
-  .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0b0d;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);z-index:200;display:none}
-  .modal.open{display:block}
-
-  footer{height:44px;display:flex;align-items:center;justify-content:center;color:#9da8b2;background:linear-gradient(90deg,#05060a,#081018)}
-
-  @media(max-width:720px){ #hud{width:200px} #minimap{width:120px;height:120px} }
+  canvas#main3d{width:100%;height:100%;display:block;touch-action:none} /* touch-action none to avoid scroll conflicts */
+  #hud{position:absolute;right:12px;top:72px;background:rgba(5,7,10,0.7);padding:10px;border-radius:8px;z-index:50}
+  #minimap{position:absolute;left:12px;top:72px;width:150px;height:150px;background:rgba(0,0,0,0.45);padding:8px;border-radius:8px;z-index:50}
+  #controlsUI{position:absolute;left:12px;bottom:12px;z-index:60;display:flex;gap:12px}
+  .btn{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.02);padding:8px 10px;border-radius:8px;color:inherit;cursor:pointer}
+  .notif{position:absolute;right:12px;bottom:12px;z-index:99;background:rgba(0,0,0,0.6);padding:8px 10px;border-radius:10px}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Vault Heist — Part1 (Core)</h1>
-    <div class="controls">
-      <select id="presetSelect" class="btn" title="見た目プリセット">
-        <option value="trash">普通にゴミ</option>
-        <option value="normal" selected>普通</option>
-        <option value="god">普通に神</option>
-      </select>
-      <button id="btnNewMap" class="btn">新しいマップ</button>
+    <h1>Vault Heist — Part1 (Fixed)</h1>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button id="btnNew" class="btn">新しいマップ</button>
       <button id="btnSave" class="btn">保存</button>
     </div>
   </header>
@@ -69,85 +39,47 @@
 
     <div id="minimap">
       <canvas id="miniCanvas" width="300" height="300" style="width:100%;height:100%"></canvas>
-      <div style="font-size:12px;color:#c9d6df;margin-top:6px">ミニマップ</div>
+      <div style="font-size:12px;color:#cbd6dc;margin-top:6px">ミニマップ</div>
     </div>
 
     <div id="hud">
-      <div style="font-weight:700;margin-bottom:8px">プレイヤー</div>
       <div>お金: <span id="money">¥0</span></div>
-      <div>銃: <span id="guns">0</span></div>
-      <div>車: <span id="cars">0</span></div>
-      <div>警戒度: <span id="heat">0</span></div>
-      <hr style="border:none;height:1px;background:rgba(255,255,255,0.02);margin:8px 0">
-      <div style="font-weight:700">マップ情報</div>
-      <div>サイズ: 600×600</div>
       <div>金庫数: <span id="vaultCount">0</span></div>
     </div>
 
     <div id="controlsUI">
-      <div class="joystick-wrap" id="joyZone"><div class="stick" id="stick"></div></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn" id="btnInteract">行動</button>
-        <button class="btn" id="btnFire">発砲</button>
-        <button class="btn" id="btnVault">金庫</button>
-      </div>
+      <button id="btnInteract" class="btn">行動</button>
+      <button id="btnFire" class="btn">発砲</button>
     </div>
 
-    <div id="notifWrap"></div>
-
-    <div id="vaultModal" class="modal" aria-hidden="true">
-      <h3>金庫ダイヤル (Placeholder)</h3>
-      <div>Part2 で強化されたダイヤルUIがここに表示されます。</div>
-    </div>
-
+    <div id="notif" class="notif" style="display:none"></div>
   </div>
-
-  <footer>スマホでも動くように PointerLock と スワイプフォールバックを実装済み。</footer>
 </div>
 
 <script>
-/* =========================
-   Part1 JS: Scene, Controls, Map
-   - target: integrate with Part2/Part3 later
-   - ensure compatibility with Safari/iPad: avoid pointerlock-only logic
-   ========================= */
+/* Fixed Part1 — robust initialization and camera controls fallback.
+   Save this file as index.html and open in browser. */
 
-// --------------------
-// Utilities
-// --------------------
-const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
-const rand = (a,b) => Math.floor(Math.random() * (b - a + 1)) + a;
-const fmtMoney = n => '¥' + Math.floor(n).toLocaleString('ja-JP');
-
-function notify(msg, ttl = 2800) {
-  const wrap = document.getElementById('notifWrap');
-  const el = document.createElement('div'); el.className = 'notif'; el.textContent = msg;
-  wrap.appendChild(el);
-  setTimeout(()=>{ el.style.opacity = '0'; setTimeout(()=> el.remove(), 320); }, ttl);
+function log(msg){ console.log('[VaultFix]', msg); }
+function showNotif(msg, t=2200){
+  const el = document.getElementById('notif');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(window._notifTO); window._notifTO = setTimeout(()=> el.style.display='none', t);
 }
 
-// --------------------
-// Global state
-// --------------------
+/* utilities */
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand = (a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const fmtMoney = n => '¥' + Math.floor(n).toLocaleString('ja-JP');
+
 const state = {
-  preset: 'normal',
-  mapSize: 600,
-  player: { x:300, z:300, money:15000, guns:1, cars:0, speed:2.0, hp:100 },
-  buildings: [],
-  vaults: [],
-  police: [],
-  heat: 0,
-  lastSave: null
+  mapSize:600,
+  player: { x:300, z:300, money:12000, guns:1 },
+  buildings: [], vaults: []
 };
 
-// expose for other parts
-window.vh_state = state;
-
-// --------------------
-// Asset references (expected on GitHub Pages under /assets)
-// You asked for B mode: files must live at /assets/...
-// --------------------
-const ASSET_BASE = './assets'; // if GitHub Pages serves from repo root, adjust accordingly
+/* assets path (B mode) */
+const ASSET_BASE = './assets';
 const ASSETS = {
   safe_dial: `${ASSET_BASE}/safe_dial.png`,
   safe_body: `${ASSET_BASE}/safe_body.png`,
@@ -158,32 +90,26 @@ const ASSETS = {
   alarm: `${ASSET_BASE}/alarm.mp3`
 };
 
-// Preload lightweight assets (images & audio) but don't fail if missing
-const preloaded = { images: {}, audio: {} };
-function preloadAssets(callback) {
-  const imgKeys = ['safe_dial','safe_body','led_green','led_red'];
-  let loaded = 0, total = imgKeys.length;
-  imgKeys.forEach(k=>{
-    const img = new Image(); img.src = ASSETS[k]; img.onload = ()=>{ preloaded.images[k] = img; if(++loaded===total) callback(); };
-    img.onerror = ()=>{ console.warn('Asset missing:', ASSETS[k]); if(++loaded===total) callback(); };
+/* preloader (images only, audio optional) */
+const preloaded = { images: {} };
+function preloadImages(keys, cb){
+  let done=0, tot=keys.length;
+  if (tot===0) return cb();
+  keys.forEach(k=>{
+    const img = new Image();
+    img.onload = ()=> { preloaded.images[k]=img; if(++done===tot) cb(); };
+    img.onerror = ()=> { console.warn('missing asset', k); if(++done===tot) cb(); };
+    img.src = ASSETS[k];
   });
-  // preload audio via Howler
-  try{
-    preloaded.audio.click = new Howl({ src: [ASSETS.click], html5:true, volume:0.4 });
-    preloaded.audio.latch = new Howl({ src: [ASSETS.latch], html5:true, volume:0.5 });
-    preloaded.audio.alarm = new Howl({ src: [ASSETS.alarm], html5:true, volume:0.45 });
-  }catch(e){ console.warn('Howler init failed or assets missing', e); }
 }
 
-// --------------------
-// Three.js scene setup
-// --------------------
-let renderer, scene, camera, clock, playerMesh, buildingGroup, controls;
-function initThree() {
+/* THREE init */
+let renderer, scene, camera, clock, playerMesh, buildingGroup, orbitControls, pointerControls, usingPointerLock=false;
+function initThree(){
   const canvas = document.getElementById('main3d');
-  renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-  // important: ensure crisp pixel ratio but clamp to avoid perf issues
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // create renderer after DOM ready
+  renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias:true });
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputEncoding = THREE.sRGBEncoding;
@@ -191,607 +117,241 @@ function initThree() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x071825);
 
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000);
   camera.position.set(state.player.x - 50, 120, state.player.z + 120);
   camera.lookAt(state.player.x, 0, state.player.z);
 
-  // lighting
-  const amb = new THREE.AmbientLight(0xffffff, 0.7);
-  scene.add(amb);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+  // lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.5);
   dir.position.set(120,300,200);
   scene.add(dir);
 
   // ground
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x162a3a, roughness:1 });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(state.mapSize, state.mapSize, 4,4), groundMat);
-  ground.rotation.x = -Math.PI/2; ground.receiveShadow = false;
-  scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(state.mapSize, state.mapSize), new THREE.MeshStandardMaterial({ color:0x142a36 }));
+  ground.rotation.x = -Math.PI/2; scene.add(ground);
 
-  // player mesh (simple)
-  const pgeo = new THREE.CylinderGeometry(6,6,18,10);
-  const pmat = new THREE.MeshStandardMaterial({ color: 0xffc857 });
-  playerMesh = new THREE.Mesh(pgeo, pmat);
-  playerMesh.position.set(state.player.x - state.mapSize/2, 9, state.player.z - state.mapSize/2);
+  playerMesh = new THREE.Mesh(new THREE.CylinderGeometry(6,6,16,8), new THREE.MeshStandardMaterial({ color:0xffc857 }));
+  playerMesh.position.set(state.player.x - state.mapSize/2, 8, state.player.z - state.mapSize/2);
   scene.add(playerMesh);
 
-  // Attempt to use PointerLockControls for desktop. We'll have a fallback for mobile.
-  try{
-    controls = new THREE.PointerLockControls(camera, document.body);
-    // pointer lock event listeners
-    document.addEventListener('pointerlockchange', ()=>{
-      const locked = document.pointerLockElement === document.body;
-      // if locked, allow mouse look; if not locked, nothing to do
-      console.log('Pointer lock changed:', locked);
-    });
-    // request pointer lock on user click (desktop)
-    renderer.domElement.addEventListener('click', ()=>{
-      if (!isMobile() && document.pointerLockElement !== document.body) {
-        document.body.requestPointerLock();
-      }
-    });
-  }catch(e){ console.warn('PointerLockControls unavailable:', e); }
-
-  // OrbitControls for debug and fallback (will be disabled by default)
-  const orbit = new THREE.OrbitControls(camera, renderer.domElement);
-  orbit.enabled = false; // keep disabled; enable when debugging
-
-  // group for buildings
   buildingGroup = new THREE.Group(); scene.add(buildingGroup);
 
-  clock = new THREE.Clock();
-  window.addEventListener('resize', onResize);
-}
+  // controls: try pointer lock (desktop), otherwise orbit for mouse/touch rotate
+  try {
+    pointerControls = new THREE.PointerLockControls(camera, document.body);
+    // request pointer on click (desktop only)
+    renderer.domElement.addEventListener('click', (e)=>{
+      if (!isMobile() && document.pointerLockElement !== document.body) {
+        try { document.body.requestPointerLock(); } catch(e){ console.warn('pointer lock request failed', e); }
+      }
+    });
+    document.addEventListener('pointerlockchange', ()=> {
+      usingPointerLock = document.pointerLockElement === document.body;
+      log('pointerLock changed: ' + usingPointerLock);
+    });
+  } catch(e){ log('PointerLockControls unavailable'); }
 
-function onResize(){
-  const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w,h,false);
-  camera.aspect = w/h; camera.updateProjectionMatrix();
+  // OrbitControls fallback (for mobile and debugging)
+  orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+  orbitControls.enableDamping = true;
+  orbitControls.dampingFactor = 0.08;
+  orbitControls.enablePan = false;
+  orbitControls.enabled = isMobile() || !usingPointerLock; // will toggle in animate
+
+  // ensure canvas does not allow page scrolling via touch
+  renderer.domElement.style.touchAction = 'none';
+
+  window.addEventListener('resize', ()=> {
+    const w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w,h,false);
+  });
 }
 
 function isMobile(){ return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
 
-// --------------------
-// Map generation (600x600), buildings, vault assignment
-// --------------------
-function generateMap(seed){
-  // simple grid placement with jitter
-  state.buildings = [];
-  state.vaults = [];
+/* Map generation + building visuals (guaranteed visible) */
+function generateMap(){
+  state.buildings = []; state.vaults = [];
   const cell = 60; const cols = Math.floor(state.mapSize / cell);
   for (let r=0;r<cols;r++){
     for (let c=0;c<cols;c++){
       const x = c*cell + rand(8, cell-8);
       const z = r*cell + rand(8, cell-8);
       const roll = Math.random();
-      let kind = 'dummy';
-      if (roll < 0.02) kind = 'bank';
-      else if (roll < 0.07) kind = 'conbini';
-      else if (roll < 0.11) kind = 'pachinko';
-      else if (roll < 0.14) kind = 'carshop';
-      else if (roll < 0.16) kind = 'slots';
-      else if (roll < 0.17) kind = 'blackmarket';
-      state.buildings.push({ kind, x, z, sx: rand(10,38), sz: rand(10,38) });
-      if (kind === 'bank' || kind === 'conbini' || kind === 'pachinko'){
-        state.vaults.push({ buildingIndex: state.buildings.length-1, locked: true, attempts: 0, dialSolution: [rand(0,9), rand(0,9), rand(0,9), rand(0,9)], reward: kind==='bank'?50000:(kind==='pachinko'?15000:4200) });
+      let k='dummy';
+      if (roll < 0.02) k='bank';
+      else if (roll < 0.07) k='conbini';
+      else if (roll < 0.11) k='pachinko';
+      else if (roll < 0.14) k='carshop';
+      state.buildings.push({ kind:k, x, z, sx:rand(10,36), sz:rand(10,36) });
+      if (k==='bank'||k==='conbini'||k==='pachinko'){
+        state.vaults.push({ buildingIndex: state.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:(k==='bank'?50000:(k==='pachinko'?15000:4200)) });
       }
     }
   }
-  // ensure at least one bank exists
   if (!state.buildings.some(b=>b.kind==='bank')){
-    const x = rand(80, state.mapSize-80), z = rand(80, state.mapSize-80);
-    state.buildings.push({ kind:'bank', x, z, sx: 56, sz:56 });
-    state.vaults.push({ buildingIndex: state.buildings.length-1, locked:true, attempts:0, dialSolution: [rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:50000 });
+    const x=rand(80, state.mapSize-80), z=rand(80, state.mapSize-80);
+    state.buildings.push({ kind:'bank', x, z, sx:56, sz:56 });
+    state.vaults.push({ buildingIndex: state.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:50000 });
   }
   document.getElementById('vaultCount').textContent = state.vaults.length;
 }
 
-// Build visual meshes for buildings
 function buildWorldVisuals(){
-  // clear group
-  while (buildingGroup.children.length) { const m = buildingGroup.children.pop(); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
+  // remove existing meshes
+  while(buildingGroup.children.length) {
+    const m = buildingGroup.children.pop();
+    if (m.geometry) { m.geometry.dispose(); }
+    if (m.material) { m.material.dispose(); }
+  }
+  // add new
   state.buildings.forEach((b,i)=>{
-    const color = kindToColor(b.kind);
-    const h = rand(20,80);
+    const color = kindColor(b.kind);
+    const h = rand(18, 80);
     const geo = new THREE.BoxGeometry(b.sx, h, b.sz);
     const mat = new THREE.MeshStandardMaterial({ color });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(b.x - state.mapSize/2, h/2, b.z - state.mapSize/2);
-    mesh.userData = { idx: i, kind: b.kind };
+    mesh.userData = { idx:i, kind: b.kind };
     buildingGroup.add(mesh);
-    // simple label sprite
-    const sprite = makeLabelSprite(b.kind);
-    sprite.position.set(b.x - state.mapSize/2, h + 6, b.z - state.mapSize/2);
-    buildingGroup.add(sprite);
+    // label as sprite
+    const label = makeLabel(b.kind);
+    label.position.set(b.x - state.mapSize/2, h + 6, b.z - state.mapSize/2);
+    buildingGroup.add(label);
   });
 }
-function kindToColor(k){ switch(k){ case 'bank': return 0x2ecc71; case 'conbini': return 0x3498db; case 'pachinko': return 0xe67e22; case 'carshop': return 0x9b59b6; case 'blackmarket': return 0xe84393; case 'slots': return 0xf1c40f; default: return 0x95a5a6; } }
-function makeLabelSprite(text){
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const ctx = c.getContext('2d'); ctx.fillStyle='rgba(0,0,0,0.0)'; ctx.fillRect(0,0,256,64); ctx.fillStyle='#fff'; ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.fillText(text, 128, 38);
+
+function kindColor(k){ switch(k){ case 'bank': return 0x2ecc71; case 'conbini': return 0x3498db; case 'pachinko': return 0xe67e22; case 'carshop': return 0x9b59b6; default: return 0x95a5a6; } }
+function makeLabel(text){
+  const c = document.createElement('canvas'); c.width=256; c.height=64;
+  const ctx = c.getContext('2d'); ctx.clearRect(0,0,256,64); ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.fillText(text,128,38);
   const tex = new THREE.CanvasTexture(c); const mat = new THREE.SpriteMaterial({ map: tex, transparent:true }); const s = new THREE.Sprite(mat); s.scale.set(36,10,1); return s;
 }
 
-// --------------------
-// Minimap drawing
-// --------------------
-const miniCanvas = document.getElementById('miniCanvas'); const mctx = miniCanvas.getContext('2d');
+/* minimap */
+const mini = document.getElementById('miniCanvas'), mctx = mini.getContext('2d');
 function drawMinimap(){
-  const W = miniCanvas.width, H = miniCanvas.height; mctx.clearRect(0,0,W,H);
+  const W = mini.width, H = mini.height;
   mctx.fillStyle = '#02111a'; mctx.fillRect(0,0,W,H);
   const s = W / state.mapSize;
   state.buildings.forEach(b=>{
     const x = b.x * s, y = b.z * s, w = clamp(b.sx * s, 3, 18), h = clamp(b.sz * s, 3, 18);
     mctx.fillStyle = (b.kind==='bank'?'#2ecc71':(b.kind==='conbini'?'#3498db':(b.kind==='pachinko'?'#e67e22':'#95a5a6')));
-    mctx.fillRect(x - w/2, y - h/2, w, h);
+    mctx.fillRect(x-w/2, y-h/2, w, h);
   });
-  // player
-  const px = state.player.x * s, pz = state.player.z * s; mctx.fillStyle = '#ffde59'; mctx.beginPath(); mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
+  const px = state.player.x * s, pz = state.player.z * s;
+  mctx.beginPath(); mctx.fillStyle = '#ffde59'; mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
 }
 
-// --------------------
-// Input: joystick (nipplejs) + keyboard + mobile camera swipe fallback
-// --------------------
-let input = { x:0, y:0, fire:false, interact:false };
-let joystickManager = null;
-function setupControls(){
-  // nipplejs for mobile joystick
-  try{
-    joystickManager = nipplejs.create({ zone: document.getElementById('joyZone'), size: 110, mode:'static', position:{ left:'60px', bottom:'60px' }, color:'#ffffff' });
-    joystickManager.on('move', (evt, data)=>{ if (!data) return; input.x = data.vector.x; input.y = -data.vector.y; });
-    joystickManager.on('end', ()=>{ input.x=0; input.y=0; });
-  }catch(e){ console.warn('nipplejs not available', e); }
-
+/* input and movement */
+let input = { x:0, y:0, fire:false };
+function setupInput(){
   // keyboard
-  window.addEventListener('keydown', (e)=>{
-    if (e.key === 'w' || e.key === 'ArrowUp') input.y = -1;
-    if (e.key === 's' || e.key === 'ArrowDown') input.y = 1;
-    if (e.key === 'a' || e.key === 'ArrowLeft') input.x = -1;
-    if (e.key === 'd' || e.key === 'ArrowRight') input.x = 1;
-    if (e.key === ' ') { input.fire = true; }
-    if (e.key === 'e') { input.interact = true; }
+  window.addEventListener('keydown', e=>{
+    if (e.key==='w'||e.key==='ArrowUp') input.y=-1;
+    if (e.key==='s'||e.key==='ArrowDown') input.y=1;
+    if (e.key==='a'||e.key==='ArrowLeft') input.x=-1;
+    if (e.key==='d'||e.key==='ArrowRight') input.x=1;
+    if (e.code==='Space') { input.fire=true; setTimeout(()=>input.fire=false,120); }
   });
-  window.addEventListener('keyup', (e)=>{
-    if (['w','s','ArrowUp','ArrowDown'].includes(e.key)) input.y = 0;
-    if (['a','d','ArrowLeft','ArrowRight'].includes(e.key)) input.x = 0;
-    if (e.key === ' ') input.fire = false;
-    if (e.key === 'e') input.interact = false;
+  window.addEventListener('keyup', e=>{
+    if (['w','s','ArrowUp','ArrowDown'].includes(e.key)) input.y=0;
+    if (['a','d','ArrowLeft','ArrowRight'].includes(e.key)) input.x=0;
   });
 
-  // mobile swipe for camera rotation (fallback when pointer lock not available)
-  let lastTouch = null; const sens = 0.005;
-  window.addEventListener('touchstart', (e)=>{ if (e.touches.length===1) lastTouch = { x:e.touches[0].clientX, y:e.touches[0].clientY }; });
-  window.addEventListener('touchmove', (e)=>{ if(!lastTouch || e.touches.length!==1) return; const dx = e.touches[0].clientX - lastTouch.x; const dy = e.touches[0].clientY - lastTouch.y; lastTouch = { x:e.touches[0].clientX, y:e.touches[0].clientY }; camera.rotation.y -= dx * sens; camera.rotation.x -= dy * sens; camera.rotation.x = clamp(camera.rotation.x, -Math.PI/2 + 0.1, Math.PI/2 - 0.1); });
-  window.addEventListener('touchend', ()=>{ lastTouch = null; });
+  // simple touch rotate: only enable orbitControls for mobile
+  if (isMobile()) {
+    orbitControls.enabled = true;
+    // don't request pointer lock on mobile
+  }
 }
 
-// --------------------
-// Interaction stubs
-// --------------------
+/* interaction */
+document.getElementById('btnNew').addEventListener('click', ()=>{
+  generateMap(); buildWorldVisuals(); drawMinimap(); showNotif('New map created');
+});
+document.getElementById('btnSave').addEventListener('click', ()=>{
+  try{ localStorage.setItem('vh_quick', JSON.stringify({player:state.player, buildings:state.buildings, vaults:state.vaults})); showNotif('Saved'); }catch(e){ showNotif('Save failed'); }
+});
+document.getElementById('btnInteract').addEventListener('click', tryInteractNearby);
+document.getElementById('btnFire').addEventListener('click', ()=> { input.fire = true; setTimeout(()=>input.fire=false,150); });
+
 function tryInteractNearby(){
-  // find nearest building
   let nearest=null, nd=1e9, idx=-1;
-  state.buildings.forEach((b,i)=>{ const d = Math.hypot(b.x - state.player.x, b.z - state.player.z); if (d < nd) { nd = d; nearest = b; idx = i; } });
-  if (nearest && nd < 36) {
-    notify('建物: ' + nearest.kind + ' (index ' + idx + ')');
-    if (['bank','conbini','pachinko'].includes(nearest.kind)) {
-      // expose to Part2: open vault modal for the found vault
-      const vault = state.vaults.find(v=>v.buildingIndex === idx && v.locked);
-      if (vault) { if (window.enhancedOpenVaultModal) window.enhancedOpenVaultModal(vault); else if (window.openVaultModal) window.openVaultModal(vault); else document.getElementById('vaultModal').classList.add('open'); }
-    } else {
-      // entering building (Part3 will override/handle)
-      if (window.enterBuilding) window.enterBuilding(idx);
-    }
-  } else notify('周囲に入れる建物がない');
+  state.buildings.forEach((b,i)=>{ const d=Math.hypot(b.x-state.player.x, b.z-state.player.z); if(d<nd){ nd=d; nearest=b; idx=i; } });
+  if (nearest && nd < 40) {
+    showNotif('Nearby: ' + nearest.kind);
+    // if vault-bearing, open vault modal via enhancedOpenVaultModal if exists
+    const vault = state.vaults.find(v=>v.buildingIndex===idx && v.locked);
+    if (vault && window.enhancedOpenVaultModal) { window.enhancedOpenVaultModal(vault); } else if (vault) { document.getElementById('notif').textContent='Vault found (no UI hook)'; document.getElementById('notif').style.display='block'; }
+  } else showNotif('No building nearby');
 }
 
-function openVaultIfNearby(){
-  tryInteractNearby();
-}
-
-// wire UI buttons
-document.getElementById('btnInteract').addEventListener('click', ()=> tryInteractNearby());
-document.getElementById('btnVault').addEventListener('click', ()=> openVaultIfNearby());
-document.getElementById('btnFire').addEventListener('click', ()=>{ input.fire = true; setTimeout(()=> input.fire=false, 140); });
-
-// --------------------
-// Save/load basic
-// --------------------
-function saveQuick(){
-  try{ const data = { player: state.player, buildings: state.buildings, vaults: state.vaults, preset: state.preset, time: Date.now() }; localStorage.setItem('vh_quick_save', JSON.stringify(data)); notify('クイック保存しました'); }catch(e){ notify('保存失敗:' + e.message); }
-}
-function loadQuick(){ try{ const raw = localStorage.getItem('vh_quick_save'); if(!raw) { notify('セーブ無し'); return; } const parsed = JSON.parse(raw); state.player = parsed.player; state.buildings = parsed.buildings; state.vaults = parsed.vaults; notify('ロードしました'); buildWorldVisuals(); drawMinimap(); }catch(e){ notify('ロード失敗:' + e.message); } }
-
-document.getElementById('btnSave').addEventListener('click', ()=> saveQuick());
-
-// new map
-document.getElementById('btnNewMap').addEventListener('click', ()=>{ generateMap(); buildWorldVisuals(); drawMinimap(); notify('マップ生成しました'); });
-
-// preset select
-document.getElementById('presetSelect').addEventListener('change', (e)=>{ state.preset = e.target.value; notify('プリセット: ' + e.target.value); generateMap(); buildWorldVisuals(); drawMinimap(); });
-
-// --------------------
-// Game loop: movement, ui updates, hooks for part2/part3
-// --------------------
-let lastTime = performance.now();
+/* main loop */
+let last = performance.now();
 function animate(now){
   requestAnimationFrame(animate);
-  const dt = (now - lastTime) / 1000; lastTime = now;
+  const dt = (now - last) / 1000; last = now;
 
-  // movement based on input
-  const speed = state.player.speed * (1 + (state.player.cars?0.25:0));
+  // toggle orbit depending on pointer lock state
+  if (pointerControls && document.pointerLockElement === document.body) {
+    orbitControls.enabled = false;
+  } else {
+    orbitControls.enabled = true;
+  }
+
+  // movement
+  const sp = 2.0;
   if (input.x !== 0 || input.y !== 0) {
-    // input.x,y in -1..1; map units need scale
-    state.player.x += input.x * speed * 40 * dt;
-    state.player.z += input.y * speed * 40 * dt;
+    state.player.x += input.x * sp * 40 * dt;
+    state.player.z += input.y * sp * 40 * dt;
     state.player.x = clamp(state.player.x, 0, state.mapSize);
     state.player.z = clamp(state.player.z, 0, state.mapSize);
     playerMesh.position.set(state.player.x - state.mapSize/2, playerMesh.position.y, state.player.z - state.mapSize/2);
   }
 
-  // update camera follow (smooth third-person)
-  const camTarget = new THREE.Vector3(state.player.x - 50, 110, state.player.z + 120);
-  camera.position.lerp(camTarget, 0.08);
+  // camera follow smooth 3rd-person
+  const target = new THREE.Vector3(state.player.x - 50, 110, state.player.z + 120);
+  camera.position.lerp(target, 0.08);
   camera.lookAt(new THREE.Vector3(state.player.x - state.mapSize/2, 0, state.player.z - state.mapSize/2));
 
-  // UI updates
-  document.getElementById('money').textContent = fmtMoney(state.player.money);
-  document.getElementById('guns').textContent = (state.player.guns || 0);
-  document.getElementById('cars').textContent = state.player.cars;
-  document.getElementById('heat').textContent = Math.round(state.heat);
+  // update orbit damping
+  if (orbitControls.enabled) orbitControls.update();
 
-  // draw minimap
-  drawMinimap();
+  // call downstream updates if present
+  try { if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); } catch(e){ console.warn('part updates error', e); }
 
-  // call Part2/Part3 updates if present
-  try{
-    if (window._part2_update) window._part2_update(dt);
-    if (window._part3_update) window._part3_update(dt);
-  }catch(e){ console.warn('Part update error', e); }
-
-  // render scene or interior depending on Part3's state
-  try{
-    if (window._vh_render) {
-      // Part3 may override render; call it
-      window._vh_render();
+  // render (Part3 may override via window._vh_render)
+  try {
+    if (window._vh_render && window.interiorActive) {
+      window._vh_render(); // Part3 interior render
     } else {
       renderer.render(scene, camera);
     }
-  }catch(e){ console.error('Render error', e); }
+  } catch(e) {
+    console.error('render error', e);
+  }
 }
 
-// --------------------
-// Init & start
-// --------------------
-preloadAssets(()=>{
-  initThree();
-  generateMap();
-  buildWorldVisuals();
-  setupControls();
-  drawMinimap();
-  notify('Assets preloaded. Part1 ready.');
-  requestAnimationFrame(animate);
+/* init sequence */
+preloadImages(['safe_dial','safe_body','led_green','led_red'], ()=>{
+  try {
+    initThree();
+    generateMap();
+    buildWorldVisuals();
+    setupInput();
+    drawMinimap();
+    requestAnimationFrame(animate);
+    showNotif('Ready — Part1 fixed');
+    log('Initialization complete');
+  } catch(ex) {
+    console.error('Init failed', ex); showNotif('Initialization failed: see console');
+  }
 });
 
-// expose some APIs for Part2/Part3
-window.generateMap = generateMap; window.buildWorldVisuals = buildWorldVisuals; window.drawMinimap = drawMinimap; window.tryInteractNearby = tryInteractNearby; window.openVaultIfNearby = openVaultIfNearby;
-
-console.log('VaultHeist Part1 initialized — waiting for Part2/Part3 to integrate.');
 </script>
 </body>
 </html>
-<!-- Part2: Vault UI, Dial Effects, Particles, Sound — Designed to be appended after Part1 script
-
-  Usage:
-   - Paste this <script> block immediately after Part1's script in the final combined HTML.
-   - Requires Part1 globals: state, scene, camera, renderer, buildWorldVisuals, drawMinimap, notify, preloaded, playerMesh
-   - Assets expected under /assets as previously specified.
-
-  Features implemented:
-   - Enhanced vault modal UI using provided PNGs (safe_body/safe_dial/led images)
-   - Dial click sound and latch/open sound using Howler (preloaded via Part1)
-   - GSAP dial rotation animation (spin + settle) and small tactile feedback
-   - Particle system (sparks, smoke, debris) using Three.Points and Sprites
-   - Big explosion function with point light flash, camera shake, building flash
-   - Hooks: window.enhancedOpenVaultModal(vault) and window._part2_update(dt)
-   - Attempt handler window.PART2_attemptOpen(vault)
-
-  Integration notes at bottom.
-
--->
-
-<script>
-(function(){
-  if (typeof THREE === 'undefined') { console.error('Part2: THREE not found. Ensure Part1 loaded.'); return; }
-
-  // Config
-  const PART2 = {
-    sparkCount: 220,
-    smokeCount: 36,
-    debrisCount: 20,
-    particleLifetime: 1.8,
-    dialSpinMs: 650,
-    dialSettleMs: 620,
-    explosionFlashIntensity: 6.2,
-    cameraShakeMag: 26,
-    particleScale: 1.0
-  };
-
-  // convenience refs
-  const ASSETS = window.ASSETS || {};
-  const pre = window.preloaded || {};
-
-  // --- Create sprite textures if images missing fallback to small canvas gradients ---
-  function makeCanvasTexture(size, innerColor, outerColor) {
-    const c = document.createElement('canvas'); c.width = c.height = size; const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
-    g.addColorStop(0, innerColor); g.addColorStop(0.6, outerColor); g.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(size/2,size/2,size/2,0,Math.PI*2); ctx.fill(); return new THREE.CanvasTexture(c);
-  }
-  const sparkTex = pre.images && pre.images.safe_dial ? createSpriteFromColor('#fff2b8') : makeCanvasTexture(64,'rgba(255,255,200,1)','rgba(255,120,0,0.9)');
-  const smokeTex = makeCanvasTexture(128,'rgba(180,180,180,0.85)','rgba(60,60,60,0.6)');
-  const debrisTex = makeCanvasTexture(48,'rgba(170,170,190,1)','rgba(80,80,80,0.8)');
-
-  function createSpriteFromColor(color){
-    return makeCanvasTexture(64, color, 'rgba(255,100,0,0.9)');
-  }
-
-  // particle group container
-  const particleGroup = new THREE.Group(); particleGroup.frustumCulled = false; scene.add(particleGroup);
-
-  // create spark system on demand
-  function createSparks(worldPos, tint=0xffcc88, count = PART2.sparkCount) {
-    const geom = new THREE.BufferGeometry(); const positions = new Float32Array(count*3); const velocities = new Float32Array(count*3); const sizes = new Float32Array(count);
-    for (let i=0;i<count;i++){
-      positions[i*3+0] = worldPos.x + (Math.random()-0.5)*4;
-      positions[i*3+1] = worldPos.y + 1 + Math.random()*5;
-      positions[i*3+2] = worldPos.z + (Math.random()-0.5)*4;
-      const ang = Math.random()*Math.PI*2; const sp = 8 + Math.random()*40;
-      velocities[i*3+0] = Math.cos(ang)*sp * (0.4 + Math.random()*0.9);
-      velocities[i*3+1] = 4 + Math.random()*12;
-      velocities[i*3+2] = Math.sin(ang)*sp * (0.4 + Math.random()*0.9);
-      sizes[i] = 6 + Math.random()*12;
-    }
-    geom.setAttribute('position', new THREE.BufferAttribute(positions,3)); geom.setAttribute('aVel', new THREE.BufferAttribute(velocities,3)); geom.setAttribute('size', new THREE.BufferAttribute(sizes,1));
-    const mat = new THREE.PointsMaterial({ map: sparkTex, sizeAttenuation:true, transparent:true, depthWrite:false }); mat.color = new THREE.Color(tint);
-    const pts = new THREE.Points(geom, mat); pts.userData = { birth: performance.now()/1000, life: PART2.particleLifetime };
-    particleGroup.add(pts);
-    return pts;
-  }
-
-  function createSmoke(worldPos, count = PART2.smokeCount) {
-    const geom = new THREE.BufferGeometry(); const positions = new Float32Array(count*3); const velocities = new Float32Array(count*3); const sizes = new Float32Array(count);
-    for (let i=0;i<count;i++){
-      positions[i*3+0] = worldPos.x + (Math.random()-0.5)*3;
-      positions[i*3+1] = worldPos.y + Math.random()*3;
-      positions[i*3+2] = worldPos.z + (Math.random()-0.5)*3;
-      velocities[i*3+0] = (Math.random()-0.5)*1.6; velocities[i*3+1] = 2 + Math.random()*3; velocities[i*3+2] = (Math.random()-0.5)*1.6;
-      sizes[i] = 16 + Math.random()*40;
-    }
-    geom.setAttribute('position', new THREE.BufferAttribute(positions,3)); geom.setAttribute('aVel', new THREE.BufferAttribute(velocities,3)); geom.setAttribute('size', new THREE.BufferAttribute(sizes,1));
-    const mat = new THREE.PointsMaterial({ map: smokeTex, sizeAttenuation:true, transparent:true, opacity:0.95, depthWrite:false }); mat.color = new THREE.Color(0xdddddd);
-    const pts = new THREE.Points(geom, mat); pts.userData = { birth: performance.now()/1000, life: 2.4 };
-    particleGroup.add(pts);
-    return pts;
-  }
-
-  function createDebris(worldPos, count = 12) {
-    const grp = new THREE.Group();
-    for (let i=0;i<count;i++){
-      const mat = new THREE.SpriteMaterial({ map: debrisTex, transparent:true });
-      const sp = new THREE.Sprite(mat); sp.scale.set(4+Math.random()*8,4+Math.random()*8,1);
-      sp.position.set(worldPos.x + (Math.random()-0.5)*6, worldPos.y + Math.random()*6, worldPos.z + (Math.random()-0.5)*6);
-      sp.userData = { vel: new THREE.Vector3((Math.random()-0.5)*8, 4 + Math.random()*8, (Math.random()-0.5)*8), birth: performance.now()/1000, life: 2.2 };
-      grp.add(sp);
-    }
-    particleGroup.add(grp); return grp;
-  }
-
-  // particle updater — to be called every frame via window._part2_update(dt)
-  function updateParticles(dt){
-    const now = performance.now()/1000; const removes = [];
-    for (let i=particleGroup.children.length-1;i>=0;i--) {
-      const obj = particleGroup.children[i];
-      if (obj.type === 'Points'){
-        const ud = obj.userData; const age = now - ud.birth; const life = ud.life || PART2.particleLifetime;
-        const pos = obj.geometry.attributes.position; const vel = obj.geometry.attributes.aVel;
-        for (let p=0;p<pos.count;p++){
-          pos.array[p*3+0] += vel.array[p*3+0] * dt * 0.4;
-          pos.array[p*3+1] += vel.array[p*3+1] * dt * 0.4;
-          pos.array[p*3+2] += vel.array[p*3+2] * dt * 0.4;
-          vel.array[p*3+1] -= 9.8 * 0.3 * dt;
-          vel.array[p*3+0] *= (1 - 0.12*dt); vel.array[p*3+2] *= (1 - 0.12*dt);
-        }
-        pos.needsUpdate = true; vel.needsUpdate = true;
-        const t = clamp(1 - (age / life), 0,1); obj.material.opacity = t;
-        if (age > life) removes.push(i);
-      } else if (obj.type === 'Group'){
-        // debris
-        for (let k=obj.children.length-1;k>=0;k--){ const sp = obj.children[k]; const ud = sp.userData; const age = now - ud.birth; ud.vel.y -= 9.8 * 0.9 * dt; sp.position.addScaledVector(ud.vel, dt); sp.material.opacity = clamp(1 - age/ud.life, 0,1); if (age > ud.life) obj.remove(sp); }
-        if (obj.children.length === 0) removes.push(i);
-      }
-    }
-    for (const idx of removes) particleGroup.remove(particleGroup.children[idx]);
-  }
-
-  // Expose update function
-  window._part2_update = function(dt){ try{ updateParticles(dt); }catch(e){ console.error('Part2 particle update error', e); } };
-
-  // --- Dial modal UI construction using provided safe images ---
-  // Build a richer modal element and inject into the DOM (replaces Part1 placeholder)
-  const vaultModal = document.getElementById('vaultModal');
-  vaultModal.innerHTML = '';
-  vaultModal.style.width = '520px';
-  vaultModal.style.maxWidth = '92%';
-  vaultModal.style.background = 'linear-gradient(180deg,#0b0b10,#121217)';
-  vaultModal.style.border = '1px solid rgba(255,255,255,0.04)';
-
-  const modalHTML = `
-    <div style="display:flex;gap:12px;align-items:flex-start">
-      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:18px;font-weight:800">金庫クラッキング</div>
-        <div style="font-size:13px;color:#cbd6dc">ダイヤルを回して4桁を合わせろ。1桁合うごとに反応がある。</div>
-        <div id="safeBodyWrap" style="position:relative;height:260px;background:#0a0a0d;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
-          <img id="safeBodyImg" src="${ASSETS.safe_body}" alt="safe" style="position:absolute;right:6px;bottom:6px;max-height:100%;object-fit:contain;opacity:0.98;" onerror="this.style.display='none'" />
-          <div id="dialCanvasWrap" style="width:220px;height:220px;display:flex;align-items:center;justify-content:center;">
-            <canvas id="dialCanvas" width="220" height="220" style="width:220px;height:220px;touch-action:none"></canvas>
-          </div>
-          <img id="ledGreen" src="${ASSETS.led_green}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'" />
-          <img id="ledRed" src="${ASSETS.led_red}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'" />
-        </div>
-      </div>
-      <div style="width:220px;display:flex;flex-direction:column;gap:8px">
-        <div style="font-weight:700">ダイヤル</div>
-        <div id="dialDigits" style="display:flex;gap:8px;justify-content:center"></div>
-        <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
-          <button id="attemptOpenBtn" class="btn">解除を試す</button>
-          <button id="closeVaultBtn" class="btn">閉じる</button>
-        </div>
-        <div style="margin-top:10px;font-size:13px;color:#cfd9de">ヒント: 回して合わせるとランプが光る。5回の失敗で警察が接近する。</div>
-      </div>
-    </div>
-  `;
-  vaultModal.insertAdjacentHTML('beforeend', modalHTML);
-
-  // canvas dial rendering: rotate the safe_dial.png inside canvas
-  const dialCanvas = document.getElementById('dialCanvas'); const dctx = dialCanvas.getContext('2d');
-  const dialImg = new Image(); dialImg.src = ASSETS.safe_dial; dialImg.onload = ()=> drawDial(0);
-
-  let dialAngle = 0; // in radians
-  function drawDial(angleRad){
-    const w = dialCanvas.width, h = dialCanvas.height; dctx.clearRect(0,0,w,h);
-    dctx.save(); dctx.translate(w/2,h/2); dctx.rotate(angleRad);
-    if (dialImg.complete && dialImg.naturalWidth>0) dctx.drawImage(dialImg, -w/2, -h/2, w, h);
-    else { // fallback: draw a circular dial
-      dctx.beginPath(); dctx.arc(0,0,w/2 - 8, 0, Math.PI*2); dctx.fillStyle='#222'; dctx.fill(); dctx.strokeStyle='#444'; dctx.lineWidth=6; dctx.stroke();
-    }
-    dctx.restore();
-    // overlay center knob
-    dctx.beginPath(); dctx.arc(w/2, h/2, 12, 0, Math.PI*2); dctx.fillStyle='#111'; dctx.fill();
-  }
-
-  // digits UI
-  const dialDigitsWrap = document.getElementById('dialDigits'); const NUM_DIGITS = 4; let digitValues = [0,0,0,0];
-  function makeDigits(){ dialDigitsWrap.innerHTML=''; for (let i=0;i<NUM_DIGITS;i++){ const el = document.createElement('div'); el.className='dialDigit'; el.style.width='56px'; el.style.height='56px'; el.style.display='flex'; el.style.alignItems='center'; el.style.justifyContent='center'; el.style.fontSize='20px'; el.style.fontWeight='800'; el.style.background='rgba(255,255,255,0.03)'; el.style.borderRadius='8px'; el.style.cursor='pointer'; el.dataset.idx = i; el.textContent = digitValues[i]; el.addEventListener('click', ()=>{ digitValues[i] = (digitValues[i]+1)%10; el.textContent = digitValues[i]; 
-      // plays click sound
-      if (pre && pre.audio && pre.audio.click) pre.audio.click.play();
-      // visual pop
-      gsap.fromTo(el, { scale: 0.94 }, { scale: 1.08, duration: 0.18, yoyo:true, repeat:1, ease:'sine.out' });
-      // if matches vault solution
-      if (currentVault && digitValues[i] === currentVault.dialSolution[i]) { el.style.boxShadow = '0 8px 24px rgba(0,255,120,0.08)'; el.style.background = 'linear-gradient(90deg,#072,#092)'; // create small spark
-        const rect = el.getBoundingClientRect(); const world = screenToWorld(rect.left + rect.width/2, rect.top + rect.height/2); createSparks(world, 0xffffff, 80); createSmoke(world, 10);
-      } else { el.style.background='rgba(255,255,255,0.03)'; el.style.boxShadow='none'; }
-    }); dialDigitsWrap.appendChild(el); } }
-  makeDigits();
-
-  // current vault reference saved when modal opens
-  let currentVault = null;
-
-  // Enhanced modal opener replacing Part1 placeholder
-  function enhancedOpenVaultModal(vaultObj) {
-    currentVault = vaultObj;
-    // reset digits to random to avoid trivial
-    digitValues = [0,0,0,0]; makeDigits();
-    // show red LED by default
-    document.getElementById('ledRed').style.display = 'block'; document.getElementById('ledGreen').style.display = 'none';
-    // center dial angle
-    dialAngle = 0; drawDial(dialAngle);
-    // animate dial subtle entrance
-    gsap.fromTo(vaultModal, { scale: 0.96, autoAlpha: 0 }, { scale:1, autoAlpha:1, duration:0.26, ease:'power2.out' });
-    vaultModal.classList.add('open'); vaultModal.setAttribute('aria-hidden','false');
-  }
-
-  // helper: convert screen to world (project to y=0 plane)
-  function screenToWorld(screenX, screenY) {
-    const rect = renderer.domElement.getBoundingClientRect(); const x = ((screenX - rect.left)/rect.width)*2 -1; const y = -((screenY - rect.top)/rect.height)*2 +1;
-    const v = new THREE.Vector3(x,y,0.5).unproject(camera); const dir = v.sub(camera.position).normalize(); const distance = (0 - camera.position.y) / dir.y; const pos = camera.position.clone().add(dir.multiplyScalar(distance)); return pos;
-  }
-
-  // attempt handler — called when user clicks attemptOpenBtn
-  function attemptOpenHandler() {
-    if (!currentVault) { notify('金庫が見つかりません'); return; }
-    // compare
-    let correct = 0; for (let i=0;i<NUM_DIGITS;i++) if (digitValues[i] === currentVault.dialSolution[i]) correct++;
-    currentVault.attempts = (currentVault.attempts || 0) + 1;
-    // sound + animation
-    pre && pre.audio && pre.audio.latch && pre.audio.latch.play();
-    // dial spin: perform a quick spin on canvas
-    const spinTarget = dialAngle + (Math.random()*4 + 2) * Math.PI * (Math.random()<0.5?-1:1);
-    gsap.to(window, { duration: PART2.dialSpinMs/1000, ease:'power3.out', onUpdate: ()=>{ /* dummy to allow tweening */ }, onComplete: ()=>{ /* after spin settle */ } });
-    // manual animated spin
-    const start = dialAngle; const end = spinTarget; gsap.to({t:start}, { t:end, duration: PART2.dialSpinMs/1000, ease:'expo.out', onUpdate: function(){ dialAngle = this.targets()[0].t; drawDial(dialAngle); }, onComplete: function(){ gsap.to({t:dialAngle}, { t: dialAngle + Math.sign(Math.random()-0.5) * 0.0001, duration: PART2.dialSettleMs/1000, ease: 'elastic.out(1,0.5)', onUpdate:function(){ dialAngle = this.targets()[0].t; drawDial(dialAngle); } }); } });
-
-    // feedback based on correctness
-    if (correct === NUM_DIGITS) {
-      // success
-      pre && pre.audio && pre.audio.latch && pre.audio.latch.play();
-      currentVault.locked = false; state.player.money += currentVault.reward; notify('金庫解錠！ ' + fmtMoney(currentVault.reward));
-      // visual: green LED + explosion near building + sparks
-      document.getElementById('ledRed').style.display='none'; document.getElementById('ledGreen').style.display='block';
-      const b = state.buildings[currentVault.buildingIndex]; const world = new THREE.Vector3(b.x - state.mapSize/2, 4, b.z - state.mapSize/2);
-      triggerBigExplosion(world);
-      // close modal
-      vaultModal.classList.remove('open'); vaultModal.setAttribute('aria-hidden','true');
-    } else {
-      // partial success: small sparks on matched digits
-      pre && pre.audio && pre.audio.click && pre.audio.click.play();
-      notify(correct + ' 桁一致');
-      // show led red flicker
-      document.getElementById('ledRed').style.display='block'; document.getElementById('ledGreen').style.display='none';
-      // localized spark/smoke
-      const b = state.buildings[currentVault.buildingIndex]; const world = new THREE.Vector3(b.x - state.mapSize/2, 2, b.z - state.mapSize/2);
-      createSparks(world, 0xffe08a, 80); createSmoke(world, 12); createDebris(world, 6);
-      if (currentVault.attempts >= 5) { notify('失敗が続いている。警察が接近中…'); if (window.spawnPoliceNearPlayer) window.spawnPoliceNearPlayer(); pre && pre.audio && pre.audio.alarm && pre.audio.alarm.play(); }
-    }
-  }
-
-  // wire attempt button
-  document.getElementById('attemptOpenBtn').addEventListener('click', attemptOpenHandler);
-  document.getElementById('closeVaultBtn').addEventListener('click', ()=>{ vaultModal.classList.remove('open'); vaultModal.setAttribute('aria-hidden','true'); currentVault=null; });
-
-  // big explosion function
-  function triggerBigExplosion(worldPos) {
-    // flash
-    const flash = new THREE.PointLight(0xfff2c1, PART2.explosionFlashIntensity, 320, 2);
-    flash.position.copy(worldPos).add(new THREE.Vector3(0,6,0)); scene.add(flash);
-    gsap.to(flash, { intensity: 0.002, duration: 1.4, ease:'expo.out', onComplete: ()=>{ scene.remove(flash); } });
-    // particles
-    createSparks(worldPos, 0xffe08a, PART2.sparkCount);
-    createSmoke(worldPos, PART2.smokeCount);
-    createDebris(worldPos, PART2.debrisCount);
-    // camera shake
-    const ox = camera.position.x, oy = camera.position.y, oz = camera.position.z;
-    gsap.to(camera.position, { x: ox + (Math.random()-0.5)*PART2.cameraShakeMag, y: oy + (Math.random()-0.5)*(PART2.cameraShakeMag*0.4), z: oz + (Math.random()-0.5)*PART2.cameraShakeMag, duration: 0.16, yoyo:true, repeat:4, ease: 'sine.inOut', onComplete: ()=>{ gsap.to(camera.position, { x:ox, y:oy, z:oz, duration: 0.5, ease:'power2.out' }); } });
-    // building flash
-    const bmesh = buildingGroup.children.find(m=> Math.abs(m.position.x - worldPos.x) < 40 && Math.abs(m.position.z - worldPos.z) < 40 );
-    if (bmesh) { const orig = bmesh.material.color.clone(); gsap.to(bmesh.material.color, { r:1, g:0.8, b:0.45, duration:0.08, yoyo:true, repeat:3, onComplete: ()=>{ bmesh.material.color.copy(orig); } }); gsap.to(bmesh.scale, { x:1.06, y:1.02, z:1.06, duration:0.12, yoyo:true, repeat:2 }); }
-  }
-
-  // expose API for Part1/Part3
-  window.enhancedOpenVaultModal = enhancedOpenVaultModal;
-  window.PART2_triggerBigExplosion = triggerBigExplosion;
-  window.PART2_createSparks = createSparks;
-  window.PART2_createSmoke = createSmoke;
-  window.PART2_createDebris = createDebris;
-
-  // --- small helper: if Part1 has openVaultModal defined, hook it to enhanced version ---
-  if (window.openVaultModal && window.openVaultModal !== enhancedOpenVaultModal) {
-    window.openVaultModal = enhancedOpenVaultModal;
-    console.info('Part2: Hooked openVaultModal -> enhancedOpenVaultModal');
-  }
-
-  console.info('Part2 loaded: Vault UI, dial animation, particles, and sounds ready.');
-
-  // Integration hint: Part1's animate loop already calls window._part2_update(dt) each frame.
-})();
-</script>
-
-<!-- Integration notes:
-  - Place this Part2 script directly after Part1's script block in the final combined HTML.
-  - Ensure your /assets folder contains:
-      safe_dial.png, safe_body.png, led_green.png, led_red.png,
-      click.mp3, latch_open.mp3, alarm.mp3
-    served at the relative path './assets/...'
-  - Part1's openVaultIfNearby/tryInteractNearby will call enhancedOpenVaultModal automatically when available.
-  - To trigger a manual vault open for testing: window.enhancedOpenVaultModal(state.vaults[0]);
-  - Part1's animate() is already written to call window._part2_update(dt)
--->
