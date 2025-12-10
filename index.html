@@ -353,7 +353,10 @@ preloadImages(['safe_dial','safe_body','led_green','led_red'], ()=>{
 });
 
 </script>
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
+  <script>
+  window.onerror = function (message, source, lineno, colno, error) {
+    alert("【エラー発生！】\n" + message + "\n場所: " + lineno + "行目");
+  };
+</script>
 </body>
 </html>
