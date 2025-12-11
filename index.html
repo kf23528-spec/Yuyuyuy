@@ -715,3 +715,541 @@ window.openVaultModal = openVaultModal;
 </script>
 </body>
 </html>
+<script>
+/* =========================
+   Part2 — Vault / Dial / Effects (Self-contained)
+   - Append this script directly after Part1's script in the same HTML file.
+   - Expects Part1 to expose:
+       window._part1_ready  (boolean)
+       window._currentVault (when a vault modal is opened)
+       window.tryInteractNearby / window.openVaultModal (optional)
+       requestAnimationFrame loop calls window._part2_update(dt) each frame (Part1 does)
+   - Assets (place in /assets):
+       /assets/safe_dial.png
+       /assets/safe_body.png
+       /assets/led_green.png
+       /assets/led_red.png
+       /assets/click.mp3
+       /assets/latch_open.mp3
+       /assets/alarm.mp3
+   - No external libs used.
+   ========================= */
+
+(function(){
+  // ======= Configuration =======
+  const ASSET_BASE = './assets';
+  const ASSETS = {
+    safe_dial: `${ASSET_BASE}/safe_dial.png`,
+    safe_body: `${ASSET_BASE}/safe_body.png`,
+    led_green: `${ASSET_BASE}/led_green.png`,
+    led_red: `${ASSET_BASE}/led_red.png`,
+    click: `${ASSET_BASE}/click.mp3`,
+    latch: `${ASSET_BASE}/latch_open.mp3`,
+    alarm: `${ASSET_BASE}/alarm.mp3`
+  };
+
+  // Particle / effect tuning
+  const CFG = {
+    sparkCount: 120,
+    smokeCount: 22,
+    debrisCount: 18,
+    sparkLife: 0.9,
+    smokeLife: 2.0,
+    debrisLife: 2.2,
+    dialFlickerMs: 140,
+    shakeMs: 700,
+    shakeIntensity: 10
+  };
+
+  // ======= State =======
+  const state = {
+    enabled: true,
+    overlayCanvas: null,
+    overlayCtx: null,
+    particles: [], // {type, x,y, vx,vy, life, age, size, color}
+    sounds: {},
+    currentVault: null,
+    dial: {
+      angle: 0,
+      dragging: false,
+      lastPointerAngle: 0,
+      autoSpinTween: null
+    },
+    digits: [0,0,0,0]
+  };
+
+  // ======= Utility =======
+  function $(id){ return document.getElementById(id); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function now(){ return performance.now()/1000; }
+
+  // ======= Audio loading (HTMLAudioElement fallback) =======
+  function loadAudio(path){
+    try{
+      const a = new Audio();
+      a.src = path;
+      a.preload = 'auto';
+      a.volume = 0.6;
+      return a;
+    }catch(e){
+      console.warn('Audio load failed', e);
+      return null;
+    }
+  }
+  state.sounds.click = loadAudio(ASSETS.click);
+  state.sounds.latch = loadAudio(ASSETS.latch);
+  state.sounds.alarm = loadAudio(ASSETS.alarm);
+
+  // ======= Overlay canvas for particles/effects =======
+  function createOverlay(){
+    // place canvas on top of Part1's gl canvas
+    const glCanvas = document.querySelector('#glcanvas');
+    if (!glCanvas) {
+      console.warn('Part2: gl canvas not found; overlay will attach to body');
+    }
+    const overlay = document.createElement('canvas');
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.zIndex = 150;
+    overlay.id = 'vh_overlay';
+    const parent = glCanvas && glCanvas.parentElement ? glCanvas.parentElement : document.body;
+    parent.appendChild(overlay);
+    state.overlayCanvas = overlay;
+    state.overlayCtx = overlay.getContext('2d');
+    resizeOverlay();
+    window.addEventListener('resize', resizeOverlay);
+  }
+  function resizeOverlay(){
+    const overlay = state.overlayCanvas;
+    const glCanvas = document.querySelector('#glcanvas');
+    if (!overlay) return;
+    if (glCanvas) {
+      const rect = glCanvas.getBoundingClientRect();
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+      overlay.style.left = rect.left + 'px';
+      overlay.style.top = rect.top + 'px';
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      overlay.width = Math.max(200, Math.floor(rect.width * dpr));
+      overlay.height = Math.max(120, Math.floor(rect.height * dpr));
+      state.overlayCtx.setTransform(dpr,0,0,dpr,0,0);
+    } else {
+      // fallback full window
+      overlay.width = Math.floor(window.innerWidth * (window.devicePixelRatio||1));
+      overlay.height = Math.floor(window.innerHeight * (window.devicePixelRatio||1));
+      state.overlayCtx.setTransform(1,0,0,1,0,0);
+    }
+  }
+
+  // ======= Particle system (2D overlay) =======
+  function spawnSparks(x,y,count=CFG.sparkCount, color='rgba(255,220,120,1)'){
+    for (let i=0;i<count;i++){
+      const ang = Math.random()*Math.PI*2;
+      const sp = {
+        type:'spark',
+        x, y,
+        vx: Math.cos(ang) * (Math.random()*160 + 20),
+        vy: Math.sin(ang) * (Math.random()*80 - 40),
+        life: CFG.sparkLife,
+        age: 0,
+        size: Math.random()*2 + 1,
+        color
+      };
+      state.particles.push(sp);
+    }
+  }
+  function spawnSmoke(x,y,count=CFG.smokeCount){
+    for (let i=0;i<count;i++){
+      state.particles.push({
+        type:'smoke',
+        x: x + (Math.random()-0.5)*18,
+        y: y + (Math.random()-0.5)*8,
+        vx: (Math.random()-0.5)*12,
+        vy: - (10 + Math.random()*28),
+        life: CFG.smokeLife * (0.8 + Math.random()*0.6),
+        age: 0,
+        size: 12 + Math.random()*28,
+        color: 'rgba(160,160,160,0.9)'
+      });
+    }
+  }
+  function spawnDebris(x,y,count=CFG.debrisCount){
+    for (let i=0;i<count;i++){
+      state.particles.push({
+        type:'debris',
+        x, y,
+        vx: (Math.random()-0.5)*120,
+        vy: - (Math.random()*140 + 40),
+        life: CFG.debrisLife,
+        age: 0,
+        size: 4 + Math.random()*10,
+        color: 'rgba(200,200,220,1)'
+      });
+    }
+  }
+
+  function updateParticles(dt){
+    const ctx = state.overlayCtx;
+    if (!ctx) return;
+    // integrate
+    for (let i=state.particles.length-1;i>=0;i--){
+      const p = state.particles[i];
+      p.age += dt;
+      if (p.age > p.life){ state.particles.splice(i,1); continue; }
+      // simple gravity & drag
+      p.vy += 120 * dt * (p.type === 'debris' ? 1.0 : 0.18);
+      p.vx *= (1 - 0.05 * dt);
+      p.vy *= (1 - 0.02 * dt);
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    // draw
+    ctx.clearRect(0,0,state.overlayCanvas.width, state.overlayCanvas.height);
+    state.particles.forEach(p=>{
+      const t = 1 - (p.age / p.life);
+      if (p.type === 'spark'){
+        ctx.globalAlpha = clamp(t * 1.2,0,1);
+        ctx.fillStyle = p.color;
+        const s = p.size * (1 + (1-t)*1.6);
+        ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
+      } else if (p.type === 'smoke'){
+        ctx.globalAlpha = clamp(0.9 * (1 - p.age / p.life), 0, 0.9);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*2);
+        g.addColorStop(0, 'rgba(190,190,190,0.9)');
+        g.addColorStop(1, 'rgba(80,80,80,0.0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1 + (p.age / p.life)), 0, Math.PI*2);
+        ctx.fill();
+      } else if (p.type === 'debris'){
+        ctx.globalAlpha = clamp(1 - (p.age / p.life), 0,1);
+        ctx.fillStyle = p.color;
+        const s = p.size;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.age * 6);
+        ctx.fillRect(-s/2, -s/2, s, s);
+        ctx.restore();
+      }
+    });
+    ctx.globalAlpha = 1.0;
+  }
+
+  // ======= Screen shake (applies CSS transform to glcanvas) =======
+  let shakeEndAt = 0;
+  let shakeIntensity = 0;
+  function startShake(ms = CFG.shakeMs, intensity = CFG.shakeIntensity){
+    const canvas = document.querySelector('#glcanvas');
+    if (!canvas) return;
+    shakeEndAt = performance.now() + ms;
+    shakeIntensity = intensity;
+    // ensure overlay is visible to draw particles
+    // we'll animate by setting transform each frame in updateShake()
+  }
+  function updateShake(){
+    const canvas = document.querySelector('#glcanvas');
+    if (!canvas) return;
+    const nowMs = performance.now();
+    if (nowMs < shakeEndAt){
+      const left = (Math.random()-0.5) * shakeIntensity;
+      const top = (Math.random()-0.5) * (shakeIntensity*0.6);
+      const rot = (Math.random()-0.5) * 0.8;
+      canvas.style.transform = `translate(${left}px, ${top}px) rotate(${rot}deg)`;
+    } else {
+      canvas.style.transform = '';
+    }
+  }
+
+  // ======= Dial UI construction (replaces Part1's modal content) =======
+  function installVaultUI(){
+    const modal = $('vaultModal');
+    if (!modal) {
+      console.warn('Part2: vaultModal not found — creating fallback modal');
+      const m = document.createElement('div'); m.id = 'vaultModal'; m.className = 'modal'; document.body.appendChild(m);
+    }
+    // populate modal
+    const safeBodyImg = `<img id="p_safe_body" src="${ASSETS.safe_body}" alt="safe" style="position:absolute;right:6px;bottom:6px;max-height:100%;object-fit:contain;opacity:0.98;" onerror="this.style.display='none'">`;
+    const ledGreen = `<img id="p_led_green" src="${ASSETS.led_green}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'>">`;
+    const ledRed = `<img id="p_led_red" src="${ASSETS.led_red}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'>">`;
+
+    modal.innerHTML = `
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:18px;font-weight:800">金庫クラッキング</div>
+          <div style="font-size:13px;color:#cbd6dc">ダイヤルを回して4桁を合わせろ。1桁合致するごとに反応が出る。</div>
+          <div id="safeBodyWrap" style="position:relative;height:300px;background:#0a0a0d;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+            ${safeBodyImg}
+            <div id="dialCanvasWrap" style="width:260px;height:260px;display:flex;align-items:center;justify-content:center;">
+              <canvas id="p_dial_canvas" width="260" height="260" style="width:260px;height:260px;touch-action:none"></canvas>
+            </div>
+            ${ledGreen}
+            ${ledRed}
+          </div>
+        </div>
+        <div style="width:260px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-weight:700">ダイヤルと桁</div>
+          <div id="p_digits" style="display:flex;gap:8px;justify-content:center"></div>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+            <button id="p_attempt_btn" class="btn">解除を試す</button>
+            <button id="p_close_btn" class="btn">閉じる</button>
+          </div>
+          <div style="margin-top:10px;font-size:13px;color:#cfd9de">ヒント: 回して合わせるとランプが光る。5回失敗で警察が接近する。</div>
+        </div>
+      </div>
+    `;
+
+    // wire buttons
+    $('p_close_btn').addEventListener('click', ()=>{ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); state.currentVault = null; window._currentVault = null; });
+    $('p_attempt_btn').addEventListener('click', ()=> attemptOpen());
+
+    // dial canvas interactions
+    const dialCanvas = $('p_dial_canvas');
+    const dctx = dialCanvas.getContext('2d');
+    const dialImg = new Image(); dialImg.src = ASSETS.safe_dial;
+    dialImg.onerror = ()=>{ /* fallback */ };
+
+    // draw function
+    function drawDial(angle){
+      dctx.clearRect(0,0,dialCanvas.width,dialCanvas.height);
+      dctx.save();
+      dctx.translate(dialCanvas.width/2, dialCanvas.height/2);
+      dctx.rotate(angle);
+      if (dialImg.complete && dialImg.naturalWidth > 0){
+        dctx.drawImage(dialImg, -dialCanvas.width/2, -dialCanvas.height/2, dialCanvas.width, dialCanvas.height);
+      } else {
+        // fallback dial
+        dctx.fillStyle = '#111';
+        dctx.beginPath(); dctx.arc(0,0, dialCanvas.width*0.45, 0, Math.PI*2); dctx.fill();
+        dctx.lineWidth = 6; dctx.strokeStyle = '#444'; dctx.stroke();
+      }
+      dctx.restore();
+      // center knob
+      dctx.beginPath(); dctx.arc(dialCanvas.width/2, dialCanvas.height/2, 12,0,Math.PI*2); dctx.fillStyle = '#0d0d0d'; dctx.fill();
+    }
+    // initial draw
+    drawDial(0);
+    state.dial.draw = drawDial;
+
+    // pointer interactions for rotation
+    let dragging = false;
+    dialCanvas.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const r = dialCanvas.getBoundingClientRect();
+      const cx = r.left + r.width/2, cy = r.top + r.height/2;
+      const ang = Math.atan2(e.clientY - cy, e.clientX - cx);
+      state.dial.dragging = true;
+      state.dial.lastPointerAngle = ang;
+    });
+    window.addEventListener('pointermove', (e)=>{
+      if (!state.dial.dragging) return;
+      const r = dialCanvas.getBoundingClientRect(); const cx = r.left + r.width/2, cy = r.top + r.height/2;
+      const ang = Math.atan2(e.clientY - cy, e.clientX - cx);
+      const delta = ang - state.dial.lastPointerAngle;
+      state.dial.angle += delta;
+      state.dial.lastPointerAngle = ang;
+      // small tactile feedback: if degree crosses roughly each 2*PI/10 threshold (digit), play click
+      // detect digit crossing
+      // (not perfect but okay)
+      if (Math.random() < 0.2) { if (state.sounds && state.sounds.click) tryPlay(state.sounds.click); }
+      state.dial.draw(state.dial.angle);
+    });
+    window.addEventListener('pointerup', ()=>{ state.dial.dragging = false; });
+
+    // clickable digits UI
+    const digitsWrap = $('p_digits');
+    function renderDigits(){
+      digitsWrap.innerHTML = '';
+      for (let i=0;i<4;i++){
+        const d = document.createElement('div');
+        d.textContent = state.digits[i];
+        d.style.width = '62px'; d.style.height = '62px';
+        d.style.display='flex'; d.style.alignItems='center'; d.style.justifyContent='center';
+        d.style.fontSize='22px'; d.style.fontWeight='800'; d.style.background='rgba(255,255,255,0.03)';
+        d.style.borderRadius='8px'; d.style.cursor='pointer';
+        (function(idx,elDiv){
+          elDiv.addEventListener('click', ()=>{
+            state.digits[idx] = (state.digits[idx] + 1) % 10;
+            // small pop & sound
+            elDiv.animate([{ transform:'scale(0.94)' }, { transform:'scale(1.06)' }, { transform:'scale(1.0)' }], { duration:180, easing:'ease-in-out' });
+            if (state.sounds.click) tryPlay(state.sounds.click);
+            renderDigits();
+            // if matched this digit, trigger small effect
+            if (state.currentVault && state.digits[idx] === state.currentVault.dialSolution[idx]){
+              // compute screen pos of this digit element for spawn
+              const rect = elDiv.getBoundingClientRect();
+              spawnSparks(rect.left + rect.width/2 - getOverlayLeft(), rect.top + rect.height/2 - getOverlayTop(), 36);
+            }
+          });
+        })(i,d);
+        digitsWrap.appendChild(d);
+      }
+    }
+    renderDigits();
+  }
+
+  function getOverlayLeft(){
+    const ov = state.overlayCanvas;
+    if (!ov) return 0;
+    const rect = ov.getBoundingClientRect();
+    return rect.left;
+  }
+  function getOverlayTop(){
+    const ov = state.overlayCanvas;
+    if (!ov) return 0;
+    const rect = ov.getBoundingClientRect();
+    return rect.top;
+  }
+
+  // ======= Attempt open logic =======
+  function attemptOpen(){
+    const vault = window._currentVault || state.currentVault;
+    if (!vault){ notify('金庫が見つかりません'); return; }
+    // compare digits
+    let correct = 0;
+    for (let i=0;i<4;i++) if (state.digits[i] === vault.dialSolution[i]) correct++;
+    vault.attempts = (vault.attempts || 0) + 1;
+    // audio
+    if (state.sounds && state.sounds.latch) tryPlay(state.sounds.latch);
+    // spin dial cosmetic
+    autoSpinDial();
+    // feedback
+    if (correct === 4){
+      // success
+      vault.locked = false;
+      // reward
+      try { if (window.vh_state && window.vh_state.player) window.vh_state.player.money = (window.vh_state.player.money || 0) + vault.reward; } catch(e){}
+      notify('金庫解錠！ 報酬: ' + (vault.reward ? (Math.floor(vault.reward).toLocaleString('ja-JP') + '円') : '???'));
+      // visual explosion near building
+      const b = (window.vh_state && window.vh_state.buildings && window.vh_state.buildings[vault.buildingIndex]) || null;
+      let cx = canvasCenterX(), cy = canvasCenterY();
+      if (b){
+        // translate building world pos to overlay canvas coords
+        const gcanvas = document.querySelector('#glcanvas');
+        if (gcanvas){
+          const rect = gcanvas.getBoundingClientRect();
+          // approximate mapping: Part1 centers player at center; so we show explosion near center for now
+          cx = rect.width/2; cy = rect.height/2;
+        }
+      }
+      spawnSparks(cx, cy, 160);
+      spawnSmoke(cx, cy, 24);
+      spawnDebris(cx, cy, 12);
+      // green led
+      const g = $('p_led_green'); const r = $('p_led_red'); if (g) g.style.display='block'; if (r) r.style.display='none';
+      // camera shake
+      startShake(900, 16);
+      // close modal after short delay
+      setTimeout(()=>{ $('vaultModal').classList.remove('open'); $('vaultModal').setAttribute('aria-hidden','true'); state.currentVault = null; window._currentVault = null; }, 900);
+    } else {
+      // partial or fail
+      if (state.sounds && state.sounds.click) tryPlay(state.sounds.click);
+      notify(correct + ' 桁一致');
+      // red led flash
+      const g = $('p_led_green'); const r = $('p_led_red'); if (r) r.style.display='block'; if (g) g.style.display='none';
+      // localized effects
+      const gcanvas = state.overlayCanvas;
+      const cx = gcanvas ? gcanvas.width/2 : (canvasCenterX()), cy = gcanvas ? gcanvas.height/2 : canvasCenterY();
+      spawnSparks(cx, cy, 48);
+      spawnSmoke(cx, cy, 6);
+      // alarm if too many attempts
+      if (vault.attempts >= 5){
+        if (state.sounds.alarm) tryPlay(state.sounds.alarm);
+        notify('失敗が続いた — 警察が接近します！');
+        // call Part3 police spawn if present
+        if (window.spawnPoliceNearPlayer) try { window.spawnPoliceNearPlayer(); } catch(e){}
+      }
+    }
+  }
+
+  // small spin tween for dial (no external tween lib)
+  let spinTweenActive = false;
+  function autoSpinDial(){
+    if (!state.dial.draw) return;
+    if (spinTweenActive) return;
+    spinTweenActive = true;
+    const start = state.dial.angle;
+    const extra = (Math.random()*6 + 3) * (Math.random()<0.5 ? -1 : 1);
+    const target = start + extra;
+    const dur = 650; const startTs = performance.now();
+    (function step(){
+      const t = (performance.now() - startTs) / dur;
+      if (t >= 1){
+        state.dial.angle = target;
+        state.dial.draw(state.dial.angle);
+        spinTweenActive = false;
+        return;
+      }
+      // ease out
+      const ease = 1 - Math.pow(1 - t, 3);
+      state.dial.angle = start + (target - start) * ease;
+      state.dial.draw(state.dial.angle);
+      requestAnimationFrame(step);
+    })();
+  }
+
+  // ======= Helpers =======
+  function tryPlay(audio){
+    try{ audio.currentTime = 0; audio.play().catch(()=>{}); }catch(e){}
+  }
+  function canvasCenterX(){ const rect = state.overlayCanvas ? state.overlayCanvas.getBoundingClientRect() : {width: window.innerWidth}; return (rect.width)/2; }
+  function canvasCenterY(){ const rect = state.overlayCanvas ? state.overlayCanvas.getBoundingClientRect() : {height: window.innerHeight}; return (rect.height)/2; }
+
+  // ======= Public API: open modal, set vault, render digits initial =======
+  function enhancedOpenVaultModal(vault){
+    // open modal and set current vault
+    state.currentVault = vault;
+    window._currentVault = vault;
+    // reset digits to random to avoid trivial
+    state.digits = [ rand(0,9)|0, rand(0,9)|0, rand(0,9)|0, rand(0,9)|0 ];
+    // ensure modal exists and UI installed
+    if (!$('vaultModal') || !$('p_dial_canvas')) installVaultUI(); // this will build DOM and wire events
+    // render digits
+    const dwrap = $('p_digits');
+    if (dwrap) {
+      // update digit elements if exist (re-render)
+      // We'll call renderDigits by invoking the click-handler's internal renderer; easiest is to re-create modal each open
+      installVaultUI(); // reinstall updates DOM and wiring, ok to call
+    }
+    // show modal
+    const modal = $('vaultModal'); modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+    // ensure overlay exists
+    if (!state.overlayCanvas) createOverlay();
+    // show initial leds
+    const g = $('p_led_green'); const r = $('p_led_red'); if (r) r.style.display = 'block'; if (g) g.style.display='none';
+  }
+
+  // ======= main frame update hook (called from Part1 render loop) =======
+  let lastNow = performance.now();
+  window._part2_update = function(dt){
+    // dt provided by Part1 sometimes; if not compute
+    const tnow = performance.now();
+    const dd = (tnow - lastNow) / 1000;
+    lastNow = tnow;
+    // update particles in overlay space
+    updateParticles(dd);
+    // update shake by applying CSS transform
+    updateShake();
+  };
+
+  // ======= Initialization =======
+  // install overlay (but keep hidden until needed)
+  createOverlay();
+  // install modal UI now to avoid race later
+  installVaultUI();
+
+  // export API
+  window.enhancedOpenVaultModal = enhancedOpenVaultModal;
+  window.PART2 = {
+    spawnSparks: (x,y,c)=> spawnSparks(x,y,c||CFG.sparkCount),
+    spawnSmoke: (x,y,c)=> spawnSmoke(x,y,c||CFG.smokeCount),
+    spawnDebris: (x,y,c)=> spawnDebris(x,y,c||CFG.debrisCount),
+    triggerExplosionAtScreen: (x,y) => { spawnSparks(x,y,160); spawnSmoke(x,y,24); spawnDebris(x,y,20); startShake(900,16); },
+    tryPlaySound: tryPlay
+  };
+
+  console.info('Part2 loaded: Vault UI, dial, particles, sounds ready (self-contained).');
+})();
+</script>
