@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Vault Heist — Part1 Expanded (Front, High-Perf)</title>
+<title>Vault Heist — Part1 Native WebGL (Front)</title>
 <style>
 :root{
-  --bg:#06101a; --panel:rgba(8,10,12,0.78); --accent:#ffde59; --muted:#9fb1bd;
+  --bg:#04101a; --panel:rgba(6,8,10,0.78); --accent:#ffde59; --muted:#9fb1bd;
 }
 html,body{height:100%;margin:0;padding:0;background:var(--bg);color:#e8eef6;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
 #app{position:fixed;inset:0;display:flex;flex-direction:column}
@@ -33,7 +33,7 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
 <body>
 <div id="app">
   <header>
-    <h1>Vault Heist — Part1 Expanded (Front)</h1>
+    <h1>Vault Heist — Part1 Native WebGL (Front)</h1>
     <div class="controls">
       <select id="presetSelect" class="btn" title="見た目プリセット">
         <option value="trash">普通にゴミ</option>
@@ -51,7 +51,7 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
   </header>
 
   <div id="sceneWrap">
-    <canvas id="glcanvas"></canvas>
+    <canvas id="glcanvas" width="1280" height="720"></canvas>
 
     <div id="minimap">
       <canvas id="mini" width="320" height="320" style="width:100%;height:100%"></canvas>
@@ -81,11 +81,11 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
     </div>
 
     <div class="notifBox" id="notifBox"></div>
-    <div class="debugOverlay" id="debugOverlay">Initializing...</div>
+    <div class="debugOverlay" id="debugOverlay">Initializing native engine...</div>
 
     <div id="vaultModal" class="modal" aria-hidden="true">
       <h3>金庫（プレースホルダ）</h3>
-      <p id="vaultMsg">Part2 で本格ダイヤル演出を追加します。</p>
+      <p id="vaultMsg">Part2 でリッチなダイヤル演出を追加します。</p>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
         <button id="closeVault" class="btn">閉じる</button>
       </div>
@@ -93,111 +93,99 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
 
   </div>
 
-  <footer>高負荷回避版 — 建物大量配置（500〜1000棟）に対応</footer>
+  <footer>Native WebGL engine — Part1 Front</footer>
 </div>
 
 <script>
-/* Part1-A Front (High-performance, safe WebGL)
-   - Deterministic seeded map generator so 3D and minimap always match
-   - Combined VBO for ground + buildings (fast)
-   - No helpers / debug meshes to avoid stray artifacts
-   - Camera high start to avoid being inside geometry
-   - Vehicles simulated but drawn on minimap only in this front part (GL vehicle drawing in back part)
-   - Virtual joystick, keyboard, touch drag camera
-   - Exposes hooks for Part2/Part3
+/*
+  Native WebGL Part1 (Front)
+  - No external libraries
+  - Deterministic seeded generator so 3D and minimap match exactly
+  - Combined VBO for ground + many boxes (buildings) to be fast
+  - Camera orbit + keyboard + virtual stick
+  - Minimap rendering synchronized to world
+  - Exposes window._part1_ready, window.generateMap, window._sceneObjects
 */
 
-/* ------------------------------
+/* ---------------------------
    Utilities
-   ------------------------------ */
+   --------------------------- */
 function el(id){ return document.getElementById(id); }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 function fmtMoney(n){ return '¥' + Math.floor(n).toLocaleString('ja-JP'); }
 function nowMs(){ return performance.now(); }
 function notify(msg, ttl=2200){ const box = el('notifBox'); const d = document.createElement('div'); d.className='notif'; d.textContent = msg; box.appendChild(d); setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>d.remove(),300); }, ttl); }
 
-/* ------------------------------
+/* ---------------------------
    Deterministic RNG (Park-Miller)
-   Ensures minimap sync with 3D — same seed used for both.
-   ------------------------------ */
-let RNG_SEED = 1234567;
-function seededRandom(){
-  // Park-Miller minimal standard
-  RNG_SEED = (RNG_SEED * 16807) % 2147483647;
-  return (RNG_SEED & 0x7fffffff) / 2147483647;
-}
-function seededRandInt(a,b){ return Math.floor(seededRandom()*(b-a+1))+a; }
-function reseed(seed){ RNG_SEED = seed >>> 0; }
+   --------------------------- */
+let RNG = 1234567;
+function reseed(s){ RNG = s >>> 0; }
+function seededRandom(){ RNG = (RNG * 16807) % 2147483647; return (RNG & 0x7fffffff) / 2147483647; }
+function seededInt(a,b){ return Math.floor(seededRandom()*(b-a+1))+a; }
 
-/* ------------------------------
-   Global state
-   ------------------------------ */
+/* ---------------------------
+   Config / State
+   --------------------------- */
 const MAP_SIZE = 600;
-const STATE = {
-  player: { x: MAP_SIZE/2, z: MAP_SIZE/2, money:25000, guns:1, cars:0, speed:2.4 },
-  buildings: [], // {kind, x,z,sx,sz,height}
-  vaults: [], // vault entries linked to buildings
-  vehicles: [], // simple moving dots (in this front part we'll draw them on minimap)
-  timeOfDay: 6*3600, // seconds
-  timeSpeed: parseFloat(el('timeSpeed')?.value || 6),
-  preset: 'normal'
+const CONFIG = {
+  targetBuildings: 700, // target count (generator uses cells + probability)
+  vehicleCount: 72,
+  maxVerticesPerBuild: 1000000
 };
-window._part1_ready = false;
-window._part1_update = function(dt){}; // placeholder
+const STATE = {
+  player: { x: MAP_SIZE/2, z: MAP_SIZE/2, money:25000, guns:1, cars:0, speed:2.2 },
+  buildings: [], // {kind,x,z,sx,sz,height}
+  vaults: [],
+  vehicles: [],
+  timeOfDay: 6*3600
+};
+window._sceneObjects = { buildings: STATE.buildings, vaults: STATE.vaults };
 
-/* ------------------------------
-   Canvas & WebGL init (safe flags)
-   ------------------------------ */
+/* ---------------------------
+   Canvas / WebGL (safe init)
+   --------------------------- */
 const canvas = el('glcanvas');
 let gl = null;
 function initGL(){
-  const opts = {
-    antialias: false,
-    alpha: false,
-    depth: true,
-    stencil: false,
-    preserveDrawingBuffer: false,
-    powerPreference: "default",
-    failIfMajorPerformanceCaveat: false
-  };
-  gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
-  if (!gl) {
-    el('sceneWrap').innerHTML = '<div style="color:#fff;padding:20px">WebGL が利用できません。管理者に相談してください。</div>';
-    return false;
+  try {
+    const opts = { antialias:false, alpha:false, depth:true, stencil:false, preserveDrawingBuffer:false, powerPreference:'default', failIfMajorPerformanceCaveat:false };
+    gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
+  } catch(e){ console.error('initGL exception', e); gl = null; }
+  if (!gl){
+    el('sceneWrap').innerHTML = '<div style="color:#fff;padding:20px">WebGL が利用できません。ブラウザまたは管理者に確認してください。</div>';
+    throw new Error('WebGL unavailable');
   }
-  // basic GL state
   gl.clearColor(0.03,0.07,0.12,1.0);
   gl.enable(gl.DEPTH_TEST);
   gl.depthFunc(gl.LEQUAL);
   gl.enable(gl.CULL_FACE);
   gl.cullFace(gl.BACK);
-  return true;
 }
 
-/* ------------------------------
-   Minimal shaders (Lambert-like)
-   Keep shader complexity low to ensure compatibility
-   ------------------------------ */
-const V_SRC = `
+/* ---------------------------
+   Minimal shaders (Lambert)
+   Keep very simple for wide compatibility
+   --------------------------- */
+const VERT_SHADER = `
 attribute vec3 aPos;
 attribute vec3 aNorm;
 attribute vec4 aCol;
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform mat3 uNormal;
-varying vec3 vN;
-varying vec4 vC;
+varying vec3 vNormal;
+varying vec4 vColor;
 void main(){
   gl_Position = uMVP * vec4(aPos, 1.0);
-  vN = uNormal * aNorm;
-  vC = aCol;
+  vNormal = uNormal * aNorm;
+  vColor = aCol;
 }
 `;
-const F_SRC = `
+const FRAG_SHADER = `
 precision mediump float;
-varying vec3 vN;
-varying vec4 vC;
+varying vec3 vNormal;
+varying vec4 vColor;
 uniform vec3 uLightDir;
 uniform float uLightIntensity;
 uniform vec3 uAmbient;
@@ -205,171 +193,170 @@ uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
 void main(){
-  vec3 n = normalize(vN);
+  vec3 n = normalize(vNormal);
   float diff = max(dot(n, normalize(uLightDir)), 0.0);
-  vec3 col = vC.rgb * (uAmbient + uLightIntensity * diff);
-  // simple fog (distance-based using gl_FragCoord.z)
-  float fogFactor = clamp((uFogFar - gl_FragCoord.z) / (uFogFar - uFogNear), 0.0, 1.0);
-  col = mix(uFogColor, col, fogFactor);
-  gl_FragColor = vec4(col, vC.a);
+  vec3 col = vColor.rgb * (uAmbient + uLightIntensity * diff);
+  float fog = clamp((uFogFar - gl_FragCoord.z) / (uFogFar - uFogNear), 0.0, 1.0);
+  col = mix(uFogColor, col, fog);
+  gl_FragColor = vec4(col, vColor.a);
 }
 `;
 
-/* ------------------------------
-   Shader compile / program
-   ------------------------------ */
-let program = null, ATTR = {}, UNI = {};
-function compile(src, type){
+/* ---------------------------
+   Shader/program helpers
+   --------------------------- */
+let program = null;
+let ATTRIB = {}, UNIFORM = {};
+function compileShader(src, type){
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
   gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
-    console.error('Shader compile error:', gl.getShaderInfoLog(s));
-    return null;
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const msg = gl.getShaderInfoLog(s);
+    console.error('Shader compile error:', msg);
+    throw new Error('Shader compile failed: ' + msg);
   }
   return s;
 }
-function makeProgram(vsSrc, fsSrc){
-  const vs = compile(vsSrc, gl.VERTEX_SHADER);
-  const fs = compile(fsSrc, gl.FRAGMENT_SHADER);
-  if (!vs || !fs) return null;
+function createProgram(vsSrc, fsSrc){
+  const vs = compileShader(vsSrc, gl.VERTEX_SHADER);
+  const fs = compileShader(fsSrc, gl.FRAGMENT_SHADER);
   const p = gl.createProgram();
-  gl.attachShader(p, vs); gl.attachShader(p, fs);
-  gl.linkProgram(p);
+  gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)){
-    console.error('Program link error', gl.getProgramInfoLog(p));
-    return null;
+    const msg = gl.getProgramInfoLog(p);
+    console.error('Program link error:', msg);
+    throw new Error('Program link failed: ' + msg);
   }
   return p;
 }
 
-/* ------------------------------
-   Buffers (single combined VBO for static world)
-   ------------------------------ */
-let vboPos = null, vboNorm = null, vboCol = null, ibo = null, indexCount = 0;
-function prepareBuffers(){
-  vboPos = gl.createBuffer();
-  vboNorm = gl.createBuffer();
-  vboCol = gl.createBuffer();
-  ibo = gl.createBuffer();
-}
-
-/* simple box mesh generator (center origin) */
-function makeBox(sx, sy, sz, colorRGB){
+/* ---------------------------
+   Geometry helpers (box)
+   We'll generate simple box arrays (24 verts per cube)
+   --------------------------- */
+function makeBox(sx, sy, sz, color){
   const x = sx/2, y = sy/2, z = sz/2;
-  const positions = [
-    -x,-y, z,  x,-y, z,  x,y, z,  -x,y,z,  // front
-     x,-y,-z, -x,-y,-z, -x,y,-z,  x,y,-z,  // back
-    -x,-y,-z, -x,-y, z, -x,y, z, -x,y,-z,  // left
-     x,-y, z,  x,-y,-z,  x,y,-z,  x,y, z,   // right
-    -x,y, z,  x,y, z,  x,y,-z, -x,y,-z,     // top
-    -x,-y,-z, x,-y,-z, x,-y, z, -x,-y,z    // bottom
-  ];
-  const normals = [
+  const positions = new Float32Array([
+    -x,-y, z,  x,-y, z,  x,y, z,  -x,y,z,
+     x,-y,-z, -x,-y,-z, -x,y,-z,  x,y,-z,
+    -x,-y,-z, -x,-y, z, -x,y, z, -x,y,-z,
+     x,-y, z,  x,-y,-z,  x,y,-z,  x,y, z,
+    -x,y, z,  x,y, z,  x,y,-z, -x,y,-z,
+    -x,-y,-z, x,-y,-z, x,-y, z, -x,-y,z
+  ]);
+  const normals = new Float32Array([
     0,0,1,0,0,1,0,0,1,0,0,1,
     0,0,-1,0,0,-1,0,0,-1,0,0,-1,
     -1,0,0,-1,0,0,-1,0,0,-1,0,0,
     1,0,0,1,0,0,1,0,0,1,0,0,
     0,1,0,0,1,0,0,1,0,0,1,0,
     0,-1,0,0,-1,0,0,-1,0,0,-1,0
-  ];
-  const colors = [];
-  for (let i=0;i<24;i++){ colors.push(colorRGB[0], colorRGB[1], colorRGB[2], 1.0); }
-  const indices = [
-    0,1,2, 0,2,3, 4,5,6, 4,6,7,
-    8,9,10, 8,10,11, 12,13,14, 12,14,15,
-    16,17,18, 16,18,19, 20,21,22, 20,22,23
-  ];
-  return { positions: new Float32Array(positions), normals: new Float32Array(normals), colors: new Float32Array(colors), indices: new Uint16Array(indices) };
+  ]);
+  const cols = new Float32Array(24*4);
+  for (let i=0;i<24;i++){ cols[i*4+0]=color[0]; cols[i*4+1]=color[1]; cols[i*4+2]=color[2]; cols[i*4+3]=1.0; }
+  const indices = new Uint16Array([
+    0,1,2,0,2,3, 4,5,6,4,6,7,
+    8,9,10,8,10,11,12,13,14,12,14,15,
+    16,17,18,16,18,19,20,21,22,20,22,23
+  ]);
+  return { positions, normals, cols, indices };
 }
 
-/* ------------------------------
+/* ---------------------------
+   GL buffers (combined world)
+   --------------------------- */
+let vboPos = null, vboNorm = null, vboCol = null, ibo = null, indexCount = 0;
+function createBuffers(){
+  vboPos = gl.createBuffer();
+  vboNorm = gl.createBuffer();
+  vboCol = gl.createBuffer();
+  ibo = gl.createBuffer();
+}
+
+/* ---------------------------
    World generation (deterministic)
-   - We'll generate many small blocks using deterministic RNG so minimap syncs
-   - To reduce VBO size, we will combine many boxes into one large buffer
-   ------------------------------ */
-function buildWorld(seed=20250101){
+   - cell grid approach with seededRandom ensures same positions for 3D and minimap
+   - many small boxes, combined into single large VBO for performance
+   --------------------------- */
+function buildWorld(seed){
   reseed(seed);
   STATE.buildings.length = 0;
   STATE.vaults.length = 0;
-  // block grid approach to ensure spread and avoid overlap
-  const cell = 30; // small cells, allows many buildings
+  // grid cells
+  const cell = 24;
   const cols = Math.floor(MAP_SIZE / cell);
-  for (let r=0;r<cols;r++){
-    for (let c=0;c<cols;c++){
-      // probability skip to reach ~600–900 buildings
-      if (seededRandom() > 0.55) continue;
-      const x = c*cell + seededRandInt(3, cell-3);
-      const z = r*cell + seededRandInt(3, cell-3);
-      const kindRoll = seededRandom();
+  for (let rz=0; rz<cols; rz++){
+    for (let cx=0; cx<cols; cx++){
+      if (seededRandom() > 0.56) continue; // tune density
+      const x = cx*cell + seededInt(3, cell-3);
+      const z = rz*cell + seededInt(3, cell-3);
+      const r = seededRandom();
       let kind = 'dummy';
-      if (kindRoll < 0.02) kind = 'bank';
-      else if (kindRoll < 0.07) kind = 'conbini';
-      else if (kindRoll < 0.12) kind = 'pachinko';
-      else if (kindRoll < 0.18) kind = 'carshop';
-      else if (kindRoll < 0.25) kind = 'slots';
-      else if (kindRoll < 0.28) kind = 'blackmarket';
-      const sx = seededRandInt(8, 26);
-      const sz = seededRandInt(8, 26);
-      const h = seededRandInt(12, 72);
+      if (r < 0.02) kind = 'bank';
+      else if (r < 0.07) kind = 'conbini';
+      else if (r < 0.12) kind = 'pachinko';
+      else if (r < 0.18) kind = 'carshop';
+      else if (r < 0.24) kind = 'slots';
+      else if (r < 0.27) kind = 'blackmarket';
+      const sx = seededInt(6, 22);
+      const sz = seededInt(6, 22);
+      const h = seededInt(10, 72);
       STATE.buildings.push({ kind, x, z, sx, sz, height: h });
     }
   }
-  // ensure at least a few banks
+  // ensure at least one bank
   if (!STATE.buildings.some(b=>b.kind==='bank')){
-    const x = seededRandInt(80, MAP_SIZE-80), z = seededRandInt(80, MAP_SIZE-80);
-    STATE.buildings.push({ kind:'bank', x, z, sx:56, sz:56, height:72 });
+    STATE.buildings.push({ kind:'bank', x: seededInt(80, MAP_SIZE-80), z: seededInt(80, MAP_SIZE-80), sx:56, sz:56, height:72 });
   }
   // vault assignment
-  STATE.vaults = [];
+  STATE.vaults.length = 0;
   STATE.buildings.forEach((b,i)=>{
-    if (b.kind==='bank' || b.kind==='conbini' || b.kind==='pachinko'){
-      STATE.vaults.push({ buildingIndex: i, locked: true, attempts:0, dialSolution: [seededRandInt(0,9),seededRandInt(0,9),seededRandInt(0,9),seededRandInt(0,9)], reward: b.kind==='bank'?60000:(b.kind==='pachinko'?16000:4800) });
+    if (b.kind === 'bank' || b.kind === 'conbini' || b.kind === 'pachinko'){
+      STATE.vaults.push({ buildingIndex:i, locked:true, attempts:0, dialSolution:[seededInt(0,9),seededInt(0,9),seededInt(0,9),seededInt(0,9)], reward: b.kind==='bank'?60000:(b.kind==='pachinko'?16000:4800) });
     }
   });
   el('vaultCount').textContent = STATE.vaults.length;
   el('bldCount').textContent = STATE.buildings.length;
 }
 
-/* ------------------------------
-   Build combined GL buffers (ground + buildings)
-   ------------------------------ */
+/* ---------------------------
+   Combine geometry and upload buffers
+   --------------------------- */
 function buildBuffersCombined(){
-  // build arrays
-  const pos = [], norm = [], col = [], idx = [];
-  let vertBase = 0;
+  const posArr = [];
+  const normArr = [];
+  const colArr = [];
+  const idxArr = [];
+  let base = 0;
 
-  // ground as a big flat box (thin)
-  {
-    const g = makeBox(MAP_SIZE, 2, MAP_SIZE, [0.10,0.16,0.20]);
-    appendMesh(g, [0,-1,0]);
-  }
+  // ground as thin big box
+  const ground = makeBox(MAP_SIZE, 2, MAP_SIZE, [0.10, 0.16, 0.20]);
+  appendMesh(ground, [0, -1, 0]);
 
   // buildings
-  for (let i=0;i<STATE.buildings.length;i++){
-    const b = STATE.buildings[i];
-    const colorHex = kindToColor(b.kind);
-    const color = hexToNorm(colorHex);
-    const box = makeBox(b.sx, b.height, b.sz, color);
+  for (let b of STATE.buildings){
+    const c = hexToRGBNorm(kindToColor(b.kind));
+    const box = makeBox(b.sx, b.height, b.sz, c);
     appendMesh(box, [b.x - MAP_SIZE/2, b.height/2, b.z - MAP_SIZE/2]);
   }
 
-  // helper append
+  // helper close-over
   function appendMesh(mesh, translate){
-    const base = pos.length/3;
+    const start = posArr.length / 3;
     for (let i=0;i<mesh.positions.length;i+=3){
-      pos.push(mesh.positions[i] + translate[0], mesh.positions[i+1] + translate[1], mesh.positions[i+2] + translate[2]);
+      posArr.push(mesh.positions[i] + translate[0], mesh.positions[i+1] + translate[1], mesh.positions[i+2] + translate[2]);
     }
-    for (let i=0;i<mesh.normals.length;i++) norm.push(mesh.normals[i]);
-    for (let i=0;i<mesh.colors.length;i++) col.push(mesh.colors[i]);
-    for (let i=0;i<mesh.indices.length;i++) idx.push(mesh.indices[i] + base);
+    for (let i=0;i<mesh.normals.length;i++) normArr.push(mesh.normals[i]);
+    for (let i=0;i<mesh.cols.length;i++) colArr.push(mesh.cols[i]);
+    for (let i=0;i<mesh.indices.length;i++) idxArr.push(mesh.indices[i] + start);
   }
 
-  // upload to GL buffers
-  const posF = new Float32Array(pos);
-  const normF = new Float32Array(norm);
-  const colF = new Float32Array(col);
-  const idxF = new Uint16Array(idx);
+  // convert to typed arrays and upload
+  const posF = new Float32Array(posArr);
+  const normF = new Float32Array(normArr);
+  const colF = new Float32Array(colArr);
+  const idxF = new Uint16Array(idxArr);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.bufferData(gl.ARRAY_BUFFER, posF, gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.bufferData(gl.ARRAY_BUFFER, normF, gl.STATIC_DRAW);
@@ -379,8 +366,32 @@ function buildBuffersCombined(){
   indexCount = idxF.length;
 }
 
-/* helper hex->normalized rgb */
-function hexToNorm(hex){
+/* ---------------------------
+   Vehicle simulation (minimap only in this front)
+   --------------------------- */
+function spawnVehicles(count){
+  STATE.vehicles.length = 0;
+  for (let i=0;i<count;i++){
+    const lane = seededRandom() < 0.5 ? 'x' : 'z';
+    const x = seededInt(0, MAP_SIZE);
+    const z = seededInt(0, MAP_SIZE);
+    const dir = seededRandom() < 0.5 ? 1 : -1;
+    const speed = 18 + seededRandom()*90;
+    STATE.vehicles.push({ x, z, lane, dir, speed });
+  }
+  window._vehicles = STATE.vehicles;
+}
+function updateVehicles(dt){
+  for (let v of STATE.vehicles){
+    if (v.lane === 'x'){ v.x += v.dir * v.speed * dt; if (v.x<0) v.x = MAP_SIZE; if (v.x>MAP_SIZE) v.x=0; }
+    else { v.z += v.dir * v.speed * dt; if (v.z<0) v.z = MAP_SIZE; if (v.z>MAP_SIZE) v.z=0; }
+  }
+}
+
+/* ---------------------------
+   Color helpers
+   --------------------------- */
+function hexToRGBNorm(hex){
   return [((hex>>16)&0xff)/255, ((hex>>8)&0xff)/255, (hex&0xff)/255];
 }
 function kindToColor(k){
@@ -395,164 +406,32 @@ function kindToColor(k){
   }
 }
 
-/* ------------------------------
-   Vehicles (simple sim)
-   We'll simulate many vehicles but draw them only on the minimap in this front part to keep GL simple and reliable.
-   Each vehicle moves along axis-aligned lanes for simplicity.
-   ------------------------------ */
-function spawnVehicles(count=64){
-  STATE.vehicles.length = 0;
-  for (let i=0;i<count;i++){
-    const lane = seededRandom() < 0.5 ? 'x' : 'z';
-    const x = seededRandInt(0, MAP_SIZE);
-    const z = seededRandInt(0, MAP_SIZE);
-    const dir = seededRandom() < 0.5 ? 1 : -1;
-    const speed = 20 + seededRandom()*80;
-    STATE.vehicles.push({ x, z, lane, dir, speed });
-  }
-  window._vehicles = STATE.vehicles;
-}
-
-/* update vehicles simple */
-function updateVehicles(dt){
-  for (let v of STATE.vehicles){
-    if (v.lane === 'x'){ v.x += v.dir * v.speed * dt; if (v.x < 0) v.x = MAP_SIZE; if (v.x > MAP_SIZE) v.x = 0; }
-    else { v.z += v.dir * v.speed * dt; if (v.z < 0) v.z = MAP_SIZE; if (v.z > MAP_SIZE) v.z = 0; }
-  }
-}
-
-/* ------------------------------
-   Camera & matrices (minimal mat4 functions)
-   ------------------------------ */
+/* ---------------------------
+   Matrices (minimal)
+   --------------------------- */
 function mat4Identity(){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }
-function mat4Multiply(a,b){ const out = new Array(16); for (let i=0;i<4;i++) for (let j=0;j<4;j++){ let s=0; for (let k=0;k<4;k++) s+=a[i*4+k]*b[k*4+j]; out[i*4+j]=s; } return out; }
-function mat4Perspective(fov,aspect,near,far){ const f=1.0/Math.tan(fov/2), nf=1/(near-far); const o=new Array(16).fill(0); o[0]=f/aspect; o[5]=f; o[10]=(far+near)*nf; o[11]=-1; o[14]=(2*far*near)*nf; return o; }
-function mat4LookAt(eye, center, up){ let zx=eye[0]-center[0], zy=eye[1]-center[1], zz=eye[2]-center[2]; let len=Math.hypot(zx,zy,zz); if(len){ zx/=len; zy/=len; zz/=len; } let xx=up[1]*zz - up[2]*zy, xy=up[2]*zx - up[0]*zz, xz=up[0]*zy - up[1]*zx; len=Math.hypot(xx,xy,xz); if(len){ xx/=len; xy/=len; xz/=len; } let yx = zy*xz - zz*xy, yy=zz*xx - zx*xz, yz = zx*xy - zy*xx; const out=[ xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, 0,0,0,1 ]; const trans = mat4Identity(); trans[12]=-eye[0]; trans[13]=-eye[1]; trans[14]=-eye[2]; return mat4Multiply(out, trans); }
-
-/* ------------------------------
-   Uniform & attribute setup
-   ------------------------------ */
-let ATTR = {}, UNI = {};
-function setupProgramAndLocations(){
-  program = makeProgram(V_SRC, F_SRC);
-  ATTR.aPos = gl.getAttribLocation(program, 'aPos');
-  ATTR.aNorm = gl.getAttribLocation(program, 'aNorm');
-  ATTR.aCol = gl.getAttribLocation(program, 'aCol');
-  UNI.uMVP = gl.getUniformLocation(program, 'uMVP');
-  UNI.uModel = gl.getUniformLocation(program, 'uModel');
-  UNI.uNormal = gl.getUniformLocation(program, 'uNormal');
-  UNI.uLightDir = gl.getUniformLocation(program, 'uLightDir');
-  UNI.uLightIntensity = gl.getUniformLocation(program, 'uLightIntensity');
-  UNI.uAmbient = gl.getUniformLocation(program, 'uAmbient');
-  UNI.uFogColor = gl.getUniformLocation(program, 'uFogColor');
-  UNI.uFogNear = gl.getUniformLocation(program, 'uFogNear');
-  UNI.uFogFar = gl.getUniformLocation(program, 'uFogFar');
+function mat4Multiply(a,b){ const out=new Array(16); for(let i=0;i<4;i++) for(let j=0;j<4;j++){ let s=0; for(let k=0;k<4;k++) s+=a[i*4+k]*b[k*4+j]; out[i*4+j]=s; } return out; }
+function mat4Translate(t){ const m=mat4Identity(); m[12]=t[0]; m[13]=t[1]; m[14]=t[2]; return m; }
+function mat4Perspective(fov, aspect, near, far){ const f=1.0/Math.tan(fov/2), nf=1/(near-far); const o=new Array(16).fill(0); o[0]=f/aspect; o[5]=f; o[10]=(far+near)*nf; o[11]=-1; o[14]=(2*far*near)*nf; return o; }
+function mat4LookAt(eye, center, up){
+  let zx=eye[0]-center[0], zy=eye[1]-center[1], zz=eye[2]-center[2];
+  let len=Math.hypot(zx,zy,zz); if(len){ zx/=len; zy/=len; zz/=len; } else { zx=0; zy=0; zz=1; }
+  let xx=up[1]*zz - up[2]*zy, xy=up[2]*zx - up[0]*zz, xz=up[0]*zy - up[1]*zx;
+  len=Math.hypot(xx,xy,xz); if(len){ xx/=len; xy/=len; xz/=len; }
+  let yx = zy*xz - zz*xy, yy=zz*xx - zx*xz, yz=zx*xy - zy*xx;
+  const out=[xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, 0,0,0,1];
+  const trans = mat4Identity(); trans[12] = -eye[0]; trans[13]=-eye[1]; trans[14]=-eye[2];
+  return mat4Multiply(out, trans);
 }
 
-/* ------------------------------
-   Render loop
-   ------------------------------ */
+/* ---------------------------
+   Camera & controls
+   --------------------------- */
 let cam = { x: STATE.player.x - MAP_SIZE/2, y: 200, z: STATE.player.z + 260, yaw: -Math.PI/2 + 0.6, pitch: -0.45 };
-let lastT = nowMs();
-
-function resizeCanvas(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(720, Math.floor(canvas.clientWidth * dpr));
-  const h = Math.max(480, Math.floor(canvas.clientHeight * dpr));
-  if (canvas.width !== w || canvas.height !== h){
-    canvas.width = w; canvas.height = h;
-    gl.viewport(0,0,canvas.width,canvas.height);
-  }
-}
-
-function computeSun(){
-  const t = (STATE.timeOfDay % 86400) / 86400;
-  const angle = (t - 0.25) * Math.PI * 2;
-  const dx = Math.cos(angle) * 0.6;
-  const dy = Math.sin(angle) * 0.9;
-  const dz = 0.2;
-  const intensity = clamp(0.25 + Math.max(0, dy) * 1.25, 0.25, 1.0);
-  const ambient = dy > 0 ? [0.18,0.20,0.22] : [0.06,0.08,0.12];
-  const fog = dy > 0 ? [0.08+(1-dy)*0.06, 0.12+(1-dy)*0.08, 0.16+(1-dy)*0.12] : [0.02,0.03,0.06];
-  return { dir: [-dx, -dy, -dz], intensity, ambient, fog };
-}
-
-function renderFrame(now){
-  const t = now || nowMs();
-  const dt = Math.min(0.05, (t - lastT)/1000);
-  lastT = t;
-
-  // update time of day
-  const speed = parseFloat(el('timeSpeed').value || 6);
-  STATE.timeOfDay = (STATE.timeOfDay + dt * speed) % 86400;
-  el('timeLabel').textContent = formatTime(STATE.timeOfDay);
-
-  // vehicles
-  updateVehicles(dt);
-
-  // input movement
-  processMovement(dt);
-
-  // camera smoothing: keep camera orbiting around player
-  updateCameraTarget();
-
-  resizeCanvas();
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.useProgram(program);
-
-  // compute matrices
-  const aspect = canvas.width / canvas.height;
-  const proj = mat4Perspective(55 * Math.PI/180, aspect, 0.1, 2000);
-  const px = STATE.player.x - MAP_SIZE/2, pz = STATE.player.z - MAP_SIZE/2;
-  const eye = [cam.x, cam.y, cam.z];
-  const center = [px, 0, pz];
-  const view = mat4LookAt(eye, center, [0,1,0]);
-
-  // sun / ambient
-  const sun = computeSun();
-  gl.uniform3fv(UNI.uLightDir, new Float32Array(sun.dir));
-  gl.uniform1f(UNI.uLightIntensity, sun.intensity);
-  gl.uniform3fv(UNI.uAmbient, new Float32Array(sun.ambient));
-  gl.uniform3fv(UNI.uFogColor, new Float32Array(sun.fog));
-  gl.uniform1f(UNI.uFogNear, 80.0);
-  gl.uniform1f(UNI.uFogFar, 1200.0);
-
-  // mvp
-  const mvp = mat4Multiply(proj, view);
-  gl.uniformMatrix4fv(UNI.uMVP, false, new Float32Array(mvp));
-  gl.uniformMatrix4fv(UNI.uModel, false, new Float32Array(mat4Identity()));
-  gl.uniformMatrix3fv(UNI.uNormal, false, new Float32Array([1,0,0, 0,1,0, 0,0,1]));
-
-  // bind VBOs
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
-  gl.enableVertexAttribArray(ATTR.aPos); gl.vertexAttribPointer(ATTR.aPos, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm);
-  gl.enableVertexAttribArray(ATTR.aNorm); gl.vertexAttribPointer(ATTR.aNorm, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboCol);
-  gl.enableVertexAttribArray(ATTR.aCol); gl.vertexAttribPointer(ATTR.aCol, 4, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-
-  // draw world
-  gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
-
-  // update overlays
-  drawMinimap(); updateHUD();
-
-  // call external parts' update hooks if present
-  try{ if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); } catch(e){ /* ignore */ }
-
-  requestAnimationFrame(renderFrame);
-}
-
-/* ------------------------------
-   Camera controls & movement
-   ------------------------------ */
-let mouseDown = false, lastMouse = null;
-canvas.addEventListener('pointerdown', (e)=>{ if (isUI(e.target)) return; mouseDown=true; lastMouse={x:e.clientX,y:e.clientY}; canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener('pointermove', (e)=>{ if (!mouseDown) return; const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y; lastMouse={x:e.clientX,y:e.clientY}; cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch - dy*0.004, -1.2, -0.12); updateCameraTarget(); });
-canvas.addEventListener('pointerup', (e)=>{ mouseDown=false; lastMouse=null; });
-
-function isUI(elm){ return elm.closest && (elm.closest('#hud') || elm.closest('#minimap') || elm.closest('#vaultModal') || elm.closest('.btn') || elm.closest('#controlsMobile')); }
+let lastTime = nowMs();
+const KEY = {};
+window.addEventListener('keydown', (e)=>{ KEY[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', (e)=>{ KEY[e.key.toLowerCase()] = false; });
 
 function updateCameraTarget(){
   const px = STATE.player.x - MAP_SIZE/2, pz = STATE.player.z - MAP_SIZE/2;
@@ -562,11 +441,28 @@ function updateCameraTarget(){
   cam.z = pz + Math.cos(cam.pitch) * Math.sin(cam.yaw) * radius;
 }
 
-/* keyboard movement */
-const KEY = {};
-window.addEventListener('keydown', (e)=>{ KEY[e.key.toLowerCase()] = true; });
-window.addEventListener('keyup', (e)=>{ KEY[e.key.toLowerCase()] = false; });
+/* pointer drag rotate */
+let dragging=false, lastPos=null;
+canvas.addEventListener('pointerdown', (e)=>{ if (isUI(e.target)) return; dragging=true; lastPos={x:e.clientX,y:e.clientY}; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', (e)=>{ if (!dragging) return; const dx=e.clientX-lastPos.x, dy=e.clientY-lastPos.y; lastPos={x:e.clientX,y:e.clientY}; cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch - dy * 0.004, -1.2, -0.12); updateCameraTarget(); });
+canvas.addEventListener('pointerup', ()=>{ dragging=false; lastPos=null; });
 
+function isUI(elm){ return elm.closest && (elm.closest('#hud') || elm.closest('#minimap') || elm.closest('.btn') || elm.closest('#controlsMobile') || elm.closest('#vaultModal')); }
+
+/* virtual joystick */
+const stickOuter = el('joyZone'), stickInner = el('stickInner');
+let stickCenter = null, draggingStick=false;
+stickOuter.addEventListener('pointerdown', (e)=>{ e.preventDefault(); draggingStick=true; stickOuter.setPointerCapture(e.pointerId); const r=stickOuter.getBoundingClientRect(); stickCenter={x:r.left + r.width/2, y:r.top + r.height/2}; onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointermove', (e)=>{ if (draggingStick) onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointerup', (e)=>{ if (draggingStick){ draggingStick=false; stickInner.style.transform='translate(0,0)'; STATE.inputStick=null; } });
+function onStickMove(cx,cy){
+  const dx = cx - stickCenter.x, dy = cy - stickCenter.y, max = 44;
+  const nx = clamp(dx/max,-1,1), ny = clamp(dy/max,-1,1);
+  stickInner.style.transform = `translate(${clamp(dx,-max,max)}px, ${clamp(dy,-max,max)}px)`;
+  STATE.inputStick = { x: nx, y: ny };
+}
+
+/* keyboard + stick movement */
 function processMovement(dt){
   let mx=0,mz=0;
   if (KEY['w']||KEY['arrowup']) mz -= 1;
@@ -575,81 +471,54 @@ function processMovement(dt){
   if (KEY['d']||KEY['arrowright']) mx += 1;
   if (STATE.inputStick){ mx += STATE.inputStick.x; mz += -STATE.inputStick.y; }
   if (mx || mz){
-    const len = Math.hypot(mx,mz) || 1;
+    const len=Math.hypot(mx,mz)||1;
     const nx = mx/len, nz = mz/len;
     const yaw = cam.yaw;
     const wx = nx * Math.cos(yaw) - nz * Math.sin(yaw);
     const wz = nx * Math.sin(yaw) + nz * Math.cos(yaw);
     STATE.player.x += wx * STATE.player.speed * 40 * dt;
     STATE.player.z += wz * STATE.player.speed * 40 * dt;
-    STATE.player.x = clamp(STATE.player.x, 0, MAP_SIZE);
-    STATE.player.z = clamp(STATE.player.z, 0, MAP_SIZE);
-    // keep camera focused
+    STATE.player.x = clamp(STATE.player.x,0,MAP_SIZE); STATE.player.z = clamp(STATE.player.z,0,MAP_SIZE);
     updateCameraTarget();
   }
 }
 
-/* virtual joystick */
-const stickOuter = el('joyZone'), stickInner = el('stickInner');
-let stickCenter = null, draggingStick=false;
-stickOuter.addEventListener('pointerdown', (e)=>{ e.preventDefault(); draggingStick=true; stickOuter.setPointerCapture(e.pointerId); const r = stickOuter.getBoundingClientRect(); stickCenter={x:r.left + r.width/2, y:r.top + r.height/2}; onStickMove(e.clientX,e.clientY); });
-window.addEventListener('pointermove', (e)=>{ if (draggingStick) onStickMove(e.clientX,e.clientY); });
-window.addEventListener('pointerup', (e)=>{ if (draggingStick){ draggingStick=false; stickInner.style.transform='translate(0,0)'; STATE.inputStick = null; } });
-function onStickMove(cx,cy){ const dx = cx - stickCenter.x, dy = cy - stickCenter.y, max=44, nx=clamp(dx/max,-1,1), ny=clamp(dy/max,-1,1); stickInner.style.transform = `translate(${clamp(dx,-max,max)}px, ${clamp(dy,-max,max)}px)`; STATE.inputStick = { x:nx, y:ny }; }
-
-/* ------------------------------
-   Minimap draw (synchronized to world)
-   ------------------------------ */
-const mini = el('mini'), mctx = mini.getContext('2d');
+/* ---------------------------
+   Minimap rendering (2D canvas)
+   --------------------------- */
+const mini = el('mini'); const mctx = mini.getContext('2d');
 function drawMinimap(){
   const W = mini.width, H = mini.height;
   mctx.clearRect(0,0,W,H);
   mctx.fillStyle = '#02111a'; mctx.fillRect(0,0,W,H);
   const s = W / MAP_SIZE;
-  // buildings as small rects
   for (let b of STATE.buildings){
     const x = Math.round(b.x * s), y = Math.round(b.z * s);
     const w = clamp(Math.round(b.sx * s), 2, 10), h = clamp(Math.round(b.sz * s), 2, 10);
     mctx.fillStyle = b.kind === 'bank' ? '#2ecc71' : (b.kind === 'conbini' ? '#3498db' : (b.kind === 'pachinko' ? '#e67e22' : '#95a5a6'));
     mctx.fillRect(x - w/2, y - h/2, w, h);
   }
-  // vehicles
-  for (let v of STATE.vehicles){
-    const vx = Math.round(v.x * s), vz = Math.round(v.z * s);
-    mctx.fillStyle = 'rgba(255,200,120,0.95)'; mctx.fillRect(vx-2, vz-2, 4,4);
-  }
-  // player
+  for (let v of STATE.vehicles){ const vx=Math.round(v.x*s), vz=Math.round(v.z*s); mctx.fillStyle='rgba(255,200,120,0.95)'; mctx.fillRect(vx-2,vz-2,4,4); }
   const px = Math.round(STATE.player.x * s), pz = Math.round(STATE.player.z * s);
   mctx.beginPath(); mctx.fillStyle = '#ffde59'; mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
 }
 
-/* ------------------------------
+/* ---------------------------
    HUD updates
-   ------------------------------ */
-function updateHUD(){
-  el('money').textContent = fmtMoney(STATE.player.money);
-  el('guns').textContent = STATE.player.guns;
-  el('cars').textContent = STATE.player.cars;
-  el('heat').textContent = Math.round(STATE.heat || 0);
-  el('debugOverlay').textContent = `Bld:${STATE.buildings.length} | Vehicles:${STATE.vehicles.length} | Time:${formatTime(STATE.timeOfDay)}`;
-}
+   --------------------------- */
+function updateHUD(){ el('money').textContent = fmtMoney(STATE.player.money); el('guns').textContent = STATE.player.guns; el('cars').textContent = STATE.player.cars; el('heat').textContent = Math.round(STATE.heat || 0); el('debugOverlay').textContent = `Bld:${STATE.buildings.length} | Vehicles:${STATE.vehicles.length} | Time:${formatTime(STATE.timeOfDay)}`; }
 
-/* ------------------------------
-   Helpers (format time)
-   ------------------------------ */
-function formatTime(sec){
-  const h = Math.floor(sec/3600)%24, m = Math.floor((sec%3600)/60);
-  const ampm = h < 12 ? '午前' : '午後';
-  const hh = ((h % 12) === 0) ? 12 : (h % 12);
-  return `${ampm} ${('0'+hh).slice(-2)}:${('0'+m).slice(-2)}`;
-}
+/* ---------------------------
+   Time formatting
+   --------------------------- */
+function formatTime(sec){ const h=Math.floor(sec/3600)%24, m=Math.floor((sec%3600)/60); const am = h<12? '午前' : '午後'; const hh = ((h%12)===0)?12:(h%12); return `${am} ${('0'+hh).slice(-2)}:${('0'+m).slice(-2)}`; }
 
-/* ------------------------------
-   Simple interactions (vault open placeholder)
-   ------------------------------ */
+/* ---------------------------
+   Interaction (vault placeholder)
+   --------------------------- */
 el('btnInteract').addEventListener('click', ()=> tryInteractNearby());
 el('btnVault').addEventListener('click', ()=> tryInteractNearby());
-el('closeVault').addEventListener('click', ()=>{ el('vaultModal').classList.remove('open'); el('vaultModal').setAttribute('aria-hidden','true'); window._currentVault=null; });
+el('closeVault').addEventListener('click', ()=>{ el('vaultModal').classList.remove('open'); el('vaultModal').setAttribute('aria-hidden','true'); window._currentVault = null; });
 
 function tryInteractNearby(){
   let nearest=null, nd=1e9, idx=-1;
@@ -663,10 +532,7 @@ function tryInteractNearby(){
     if (['bank','conbini','pachinko'].includes(nearest.kind)){
       const vault = STATE.vaults.find(v=>v.buildingIndex===idx && v.locked);
       if (vault){ openVaultModal(vault); } else notify('金庫は解錠済み');
-      return;
-    } else {
-      notify('建物へ侵入可能（Part2で室内）'); return;
-    }
+    } else notify('建物に侵入可能（Part2で室内）');
   } else notify('近くに入れる建物がありません');
 }
 function openVaultModal(v){
@@ -675,57 +541,146 @@ function openVaultModal(v){
   window._currentVault = v;
 }
 
-/* ------------------------------
-   Init & start
-   ------------------------------ */
-function start(seed=20250101){
-  // canvas size
+/* ---------------------------
+   Render loop
+   --------------------------- */
+function computeSun(){
+  const t = (STATE.timeOfDay % 86400) / 86400;
+  const angle = (t - 0.25) * Math.PI * 2;
+  const dx = Math.cos(angle) * 0.6, dy = Math.sin(angle) * 0.9, dz = 0.2;
+  const intensity = clamp(0.25 + Math.max(0,dy) * 1.25, 0.25, 1.0);
+  const ambient = dy > 0 ? [0.18,0.20,0.22] : [0.06,0.08,0.12];
+  const fog = dy > 0 ? [0.08+(1-dy)*0.06, 0.12+(1-dy)*0.08, 0.16+(1-dy)*0.12] : [0.02,0.03,0.06];
+  return { dir:[-dx,-dy,-dz], intensity, ambient, fog };
+}
+
+function resizeCanvas(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(800, Math.floor(window.innerWidth * dpr));
-  const h = Math.max(480, Math.floor((window.innerHeight - 64) * dpr));
-  canvas.width = w; canvas.height = h;
+  const w = Math.max(720, Math.floor(canvas.clientWidth * dpr));
+  const h = Math.max(480, Math.floor(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h){
+    canvas.width = w; canvas.height = h;
+    gl.viewport(0,0,canvas.width,canvas.height);
+  }
+}
 
-  if (!initGL()) return;
-  // prepare program & buffers
-  if (!makeProgram) { console.error('shader missing'); return; }
-  program = makeProgram(V_SRC, F_SRC);
-  if (!program) { console.error('Program failed'); return; }
-  setupProgramAndLocations();
-  prepareBuffers();
-  buildWorld(seed);
-  buildBuffersCombined();
-  spawnVehicles(72);
-  updateHUD();
+function renderFrame(ts){
+  const t = ts || nowMs();
+  const dt = Math.min(0.05, (t - lastTime) / 1000);
+  lastTime = t;
+  // update time
+  const speed = parseFloat(el('timeSpeed').value || 6);
+  STATE.timeOfDay = (STATE.timeOfDay + dt * speed) % 86400;
+
+  updateVehicles(dt);
+  processMovement(dt);
+  updateCameraTarget();
+
+  resizeCanvas();
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(program);
+
+  const aspect = canvas.width / canvas.height;
+  const proj = mat4Perspective(55 * Math.PI/180, aspect, 0.1, 2000);
+  const px = STATE.player.x - MAP_SIZE/2, pz = STATE.player.z - MAP_SIZE/2;
+  const eye = [ cam.x, cam.y, cam.z ];
+  const center = [ px, 0, pz ];
+  const view = mat4LookAt(eye, center, [0,1,0]);
+
+  const sun = computeSun();
+  gl.uniform3fv(UNIFORM.uLightDir, new Float32Array(sun.dir));
+  gl.uniform1f(UNIFORM.uLightIntensity, sun.intensity);
+  gl.uniform3fv(UNIFORM.uAmbient, new Float32Array(sun.ambient));
+  gl.uniform3fv(UNIFORM.uFogColor, new Float32Array(sun.fog));
+  gl.uniform1f(UNIFORM.uFogNear, 80.0);
+  gl.uniform1f(UNIFORM.uFogFar, 1200.0);
+
+  const mvp = mat4Multiply(proj, view);
+  gl.uniformMatrix4fv(UNIFORM.uMVP, false, new Float32Array(mvp));
+  gl.uniformMatrix4fv(UNIFORM.uModel, false, new Float32Array(mat4Identity()));
+  gl.uniformMatrix3fv(UNIFORM.uNormal, false, new Float32Array([1,0,0, 0,1,0, 0,0,1]));
+
+  // bind buffers
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
+  gl.enableVertexAttribArray(ATTRIB.aPos); gl.vertexAttribPointer(ATTRIB.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm);
+  gl.enableVertexAttribArray(ATTRIB.aNorm); gl.vertexAttribPointer(ATTRIB.aNorm, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboCol);
+  gl.enableVertexAttribArray(ATTRIB.aCol); gl.vertexAttribPointer(ATTRIB.aCol, 4, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+
+  gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
+
   drawMinimap();
-  window._part1_ready = true;
+  updateHUD();
+
+  try{ if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); } catch(e){ console.warn('part hook error', e); }
+
   requestAnimationFrame(renderFrame);
-  notify('Part1 Expanded (Front) 初期化完了');
 }
 
-/* support functions used earlier but declared later */
-function prepareBuffers(){ vboPos = gl.createBuffer(); vboNorm = gl.createBuffer(); vboCol = gl.createBuffer(); ibo = gl.createBuffer(); }
-function setupProgramAndLocations(){ ATTR.aPos = gl.getAttribLocation(program,'aPos'); ATTR.aNorm = gl.getAttribLocation(program,'aNorm'); ATTR.aCol = gl.getAttribLocation(program,'aCol'); UNI.uMVP = gl.getUniformLocation(program,'uMVP'); UNI.uModel = gl.getUniformLocation(program,'uModel'); UNI.uNormal = gl.getUniformLocation(program,'uNormal'); UNI.uLightDir = gl.getUniformLocation(program,'uLightDir'); UNI.uLightIntensity = gl.getUniformLocation(program,'uLightIntensity'); UNI.uAmbient = gl.getUniformLocation(program,'uAmbient'); UNI.uFogColor = gl.getUniformLocation(program,'uFogColor'); UNI.uFogNear = gl.getUniformLocation(program,'uFogNear'); UNI.uFogFar = gl.getUniformLocation(program,'uFogFar'); }
+/* ---------------------------
+   Init entry
+   --------------------------- */
+function start(seed=20250101){
+  try{
+    // canvas sizing (initial)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(800, Math.floor(window.innerWidth * dpr));
+    canvas.height = Math.max(480, Math.floor((window.innerHeight - 64) * dpr));
 
-/* utility used in buildBuffersCombined but placed after (hoisted) */
-function appendMeshToArray(targetArr, mesh, translate){
-  // (not used in this structure as append implemented inline)
+    initGL();
+
+    program = createProgram(VERT_SHADER, FRAG_SHADER);
+    createBuffers();
+
+    // get attrib/uniform locations
+    ATTRIB.aPos = gl.getAttribLocation(program, 'aPos');
+    ATTRIB.aNorm = gl.getAttribLocation(program, 'aNorm');
+    ATTRIB.aCol = gl.getAttribLocation(program, 'aCol');
+    UNIFORM.uMVP = gl.getUniformLocation(program, 'uMVP');
+    UNIFORM.uModel = gl.getUniformLocation(program, 'uModel');
+    UNIFORM.uNormal = gl.getUniformLocation(program, 'uNormal');
+    UNIFORM.uLightDir = gl.getUniformLocation(program, 'uLightDir');
+    UNIFORM.uLightIntensity = gl.getUniformLocation(program, 'uLightIntensity');
+    UNIFORM.uAmbient = gl.getUniformLocation(program, 'uAmbient');
+    UNIFORM.uFogColor = gl.getUniformLocation(program, 'uFogColor');
+    UNIFORM.uFogNear = gl.getUniformLocation(program, 'uFogNear');
+    UNIFORM.uFogFar = gl.getUniformLocation(program, 'uFogFar');
+
+    // generate world
+    buildWorld(seed);
+    buildBuffersCombined();
+
+    // vehicles
+    spawnVehicles(CONFIG.vehicleCount);
+
+    // set initial camera above ground to avoid inside-geometry
+    updateCameraTarget();
+
+    window._part1_ready = true;
+    window.generateMap = function(s){ buildWorld(s||Date.now()); buildBuffersCombined(); spawnVehicles(CONFIG.vehicleCount); drawMinimap(); notify('マップ生成済み'); };
+    window._sceneObjects = { buildings: STATE.buildings, vaults: STATE.vaults };
+    notify('Part1 (native WebGL) initialised');
+    // start loop
+    requestAnimationFrame(renderFrame);
+  } catch(err){
+    console.error('Initialization failed', err);
+    el('debugOverlay').textContent = '初期化失敗: ' + (err && err.message ? err.message : String(err));
+    notify('初期化でエラーが発生しました。コンソールを確認してください。', 6000);
+  }
 }
 
-/* ============================
-   Wire UI buttons
-   ============================ */
-el('btnNewMap').addEventListener('click', ()=>{ buildWorld(Math.floor(Math.random()*99999999)); buildBuffersCombined(); spawnVehicles(72); drawMinimap(); notify('新しい町を生成しました'); });
-el('btnSave').addEventListener('click', ()=>{ try{ localStorage.setItem('vh_part1_expanded_front', JSON.stringify({ buildings: STATE.buildings, vaults: STATE.vaults })); notify('保存しました'); }catch(e){ notify('保存失敗'); }});
-el('presetSelect').addEventListener('change',(e)=>{ STATE.preset = e.target.value; notify('プリセット: ' + STATE.preset); });
+/* wire UI */
+el('btnNewMap').addEventListener('click', ()=>{ start(Math.floor(Math.random()*99999999)); });
+el('btnSave').addEventListener('click', ()=>{
+  try{ const s = { buildings: STATE.buildings, vaults: STATE.vaults, seed: RNG }; localStorage.setItem('vh_native_front', JSON.stringify(s)); notify('保存しました'); } catch(e){ notify('保存に失敗しました'); }
+});
+el('presetSelect').addEventListener('change', (e)=>{ notify('プリセット: ' + e.target.value); });
+el('timeSpeed').addEventListener('change', ()=>{ notify('時間速度: ' + el('timeSpeed').value + 'x'); });
 
-/* start with deterministic seed */
+/* final start */
 start(20250101);
-
-/* expose for other parts */
-window.generateMap = function(seed){ buildWorld(seed||20250101); buildBuffersCombined(); drawMinimap(); };
-window._vehicles = STATE.vehicles;
-window._sceneObjects = { buildings: STATE.buildings, vaults: STATE.vaults };
-window._part1_update = function(dt){}; // placeholder
 
 </script>
 </body>
