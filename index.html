@@ -3,42 +3,45 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Vault Heist — Part1 (WebGL Safe Core)</title>
+<title>Vault Heist — Part1 (Enhanced Offline 3D Core)</title>
 <style>
-:root{
-  --bg:#06101a; --panel:rgba(6,8,10,0.78); --accent:#ffde59; --muted:#9fb1bd;
-}
+:root{ --bg: #06101a; --panel: rgba(6,8,10,0.78); --accent: #ffde59; --muted: #9fb1bd; --good:#2ecc71; --bad:#e74c3c;}
 html,body{height:100%;margin:0;padding:0;background:var(--bg);color:#e8eef6;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
 #app{position:fixed;inset:0;display:flex;flex-direction:column}
-header{height:56px;display:flex;align-items:center;padding:8px 12px;background:linear-gradient(90deg,#07101a,#0b1220);box-shadow:0 6px 18px rgba(0,0,0,0.45);z-index:40}
-header h1{margin:0;font-size:15px}
-.controls{margin-left:auto;display:flex;gap:8px;align-items:center}
+header{height:64px;padding:8px 12px;display:flex;align-items:center;background:linear-gradient(90deg,#07101a,#0b1220);box-shadow:0 6px 18px rgba(0,0,0,0.45);z-index:110}
+header h1{margin:0;font-size:16px}
+.header-right{margin-left:auto;display:flex;gap:8px;align-items:center}
 .btn{appearance:none;border:none;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);color:inherit;cursor:pointer}
+.select{appearance:none;padding:8px;border-radius:8px;background:rgba(255,255,255,0.03);color:inherit;border:1px solid rgba(255,255,255,0.03)}
 #sceneWrap{flex:1;position:relative;overflow:hidden}
 canvas#glcanvas{display:block;width:100%;height:100%;background:linear-gradient(180deg,#072033,#04101a);touch-action:none}
-#hud{position:absolute;right:12px;top:72px;width:280px;background:var(--panel);border-radius:10px;padding:10px;backdrop-filter:blur(6px);z-index:60;border:1px solid rgba(255,255,255,0.03)}
-#minimap{position:absolute;left:12px;top:72px;width:160px;height:160px;background:rgba(0,0,0,0.36);border-radius:8px;padding:8px;z-index:60;border:1px solid rgba(255,255,255,0.03)}
-#controlsMobile{position:absolute;left:12px;bottom:12px;z-index:70;display:flex;gap:12px;align-items:flex-end}
+#hud{position:absolute;right:12px;top:88px;width:320px;background:var(--panel);border-radius:12px;padding:12px;backdrop-filter:blur(6px);z-index:130;border:1px solid rgba(255,255,255,0.03)}
+#hud h2{margin:0;font-size:13px}
+.hud-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.02)}
+#minimap{position:absolute;left:12px;top:88px;width:180px;height:180px;background:rgba(0,0,0,0.36);border-radius:10px;padding:8px;z-index:130;border:1px solid rgba(255,255,255,0.03)}
+#minimap canvas{width:100%;height:100%}
+#controlsMobile{position:absolute;left:12px;bottom:12px;z-index:150;display:flex;gap:12px;align-items:flex-end}
 .stickOuter{width:120px;height:120px;border-radius:999px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;touch-action:none}
 .stickInner{width:52px;height:52px;border-radius:999px;background:rgba(255,255,255,0.06);transform:translate(0,0)}
-.notifBox{position:absolute;right:12px;bottom:12px;z-index:90;display:flex;flex-direction:column-reverse;gap:8px}
+.notifBox{position:absolute;right:12px;bottom:12px;z-index:160;display:flex;flex-direction:column-reverse;gap:8px}
 .notif{background:rgba(0,0,0,0.6);padding:8px 10px;border-radius:10px;color:#eaf1f6;font-size:13px}
-.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0c0f;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);z-index:200;display:none;max-width:96%}
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0c0f;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);z-index:210;display:none;max-width:96%}
 .modal.open{display:block}
-footer{height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted);background:linear-gradient(90deg,#03050a,#061018)}
-@media(max-width:720px){ #hud{width:200px} #minimap{width:120px;height:120px} }
+.legend{font-size:12px;color:#cfdfe6;margin-top:8px}
+.footer{height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted);background:linear-gradient(90deg,#03050a,#061018)}
+.controls-bottom{display:flex;gap:8px;align-items:center}
+.small{font-size:12px;padding:6px 8px;border-radius:8px}
+.panel-section{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.02)}
+@media(max-width:720px){ #hud{width:220px} #minimap{width:120px;height:120px} .header-right{display:none} }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Vault Heist — Part1 (WebGL Safe Core)</h1>
-    <div class="controls">
-      <select id="presetSelect" class="btn" title="見た目プリセット">
-        <option value="trash">普通にゴミ</option>
-        <option value="normal" selected>普通</option>
-        <option value="god">普通に神</option>
-      </select>
+    <h1>Vault Heist — Part1 (Enhanced Offline 3D Core)</h1>
+    <div class="header-right">
+      <select id="graphicsQuality" class="select small" title="描画品質"><option value="low">低</option><option value="med" selected>中</option><option value="high">高</option></select>
+      <select id="difficultySel" class="select small" title="難易度"><option value="EASY">EASY</option><option value="NORMAL" selected>NORMAL</option><option value="HARD">HARD</option></select>
       <button id="btnNewMap" class="btn">新しいマップ</button>
       <button id="btnSave" class="btn">保存</button>
     </div>
@@ -48,27 +51,33 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
     <canvas id="glcanvas"></canvas>
 
     <div id="minimap">
-      <canvas id="mini" width="300" height="300" style="width:100%;height:100%"></canvas>
-      <div style="font-size:12px;color:#cbd6dc;margin-top:6px">ミニマップ</div>
+      <canvas id="mini" width="320" height="320"></canvas>
+      <div class="legend">凡例: <span style="color:#2ecc71">銀行</span> <span style="color:#3498db">コンビニ</span> <span style="color:#e67e22">パチンコ</span></div>
     </div>
 
     <div id="hud">
-      <div style="font-weight:700;margin-bottom:8px">プレイヤー</div>
-      <div>お金: <span id="money">¥0</span></div>
-      <div>銃: <span id="guns">0</span></div>
-      <div>車: <span id="cars">0</span></div>
-      <div>警戒度: <span id="heat">0</span></div>
-      <hr style="border:none;height:1px;background:rgba(255,255,255,0.02);margin:8px 0">
-      <div style="font-weight:700">マップ情報</div>
-      <div>サイズ: 600×600</div>
-      <div>金庫数: <span id="vaultCount">0</span></div>
+      <h2>ステータス</h2>
+      <div class="hud-row"><div>所持金</div><div id="money">¥0</div></div>
+      <div class="hud-row"><div>銃</div><div id="guns">0</div></div>
+      <div class="hud-row"><div>車</div><div id="cars">0</div></div>
+      <div class="hud-row"><div>警戒度</div><div id="heat">0</div></div>
+      <div class="panel-section">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div>マップ</div><div>600×600</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><div>金庫数</div><div id="vaultCount">0</div></div>
+      </div>
+      <div class="panel-section">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="btnInteract" class="btn small">行動</button>
+          <button id="btnVault" class="btn small">金庫</button>
+        </div>
+      </div>
     </div>
 
     <div id="controlsMobile">
       <div class="stickOuter" id="joyZone"><div class="stickInner" id="stickInner"></div></div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn" id="btnInteract">行動</button>
-        <button class="btn" id="btnFire">発砲</button>
+        <button id="btnFire" class="btn small">発砲</button>
+        <button id="btnEnter" class="btn small">侵入</button>
       </div>
     </div>
 
@@ -76,79 +85,78 @@ footer{height:44px;display:flex;align-items:center;justify-content:center;color:
 
     <div id="vaultModal" class="modal" aria-hidden="true">
       <h3>金庫（プレースホルダ）</h3>
-      <p id="vaultMsg">金庫ダイヤルUIは Part2 で実装します。</p>
+      <p id="vaultMsg">Part2 でダイヤル/UI を実装予定。ここで金額等を確認できます。</p>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
         <button id="closeVault" class="btn">閉じる</button>
       </div>
     </div>
 
+    <div id="shopModal" class="modal" aria-hidden="true">
+      <h3 id="shopTitle">ショップ</h3>
+      <div id="shopBody"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button id="closeShop" class="btn">閉じる</button>
+      </div>
+    </div>
+
   </div>
 
-  <footer>WebGL: 安全モード初期化 — まず表示を優先</footer>
+  <div class="footer">完成度向上済み Part1 — 次はPart2（ダイヤル演出）を統合します</div>
 </div>
 
 <script>
-/* Part1 — WebGL-safe core (no external libs)
-   - Creates a simple WebGL renderer (safe flags)
-   - Renders ground + many boxes as buildings
-   - Camera controls: mouse drag / touch swipe / virtual stick / keyboard
-   - Minimap and HUD
-   - Exposes hooks for Part2/Part3
-*/
+/* ================
+   Enhanced Part1 — single-file offline 3D core
+   - WebGL safe init (no external libs)
+   - Improved map generation, lighting, camera, controls
+   - Vehicles placeholder, shops, vaults, minimap, save/load, difficulty, performance options
+   - Hooks for Part2/Part3 integration exposed as window._part1_*
+   ================ */
 
-/* ===========================
+/* -----------------------
    Utilities
-   =========================== */
+   ----------------------- */
 function el(id){ return document.getElementById(id); }
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 function rand(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 function fmtMoney(n){ return '¥' + Math.floor(n).toLocaleString('ja-JP'); }
-function notify(msg, ttl=2400){
-  const box = el('notifBox'); const d = document.createElement('div'); d.className='notif'; d.textContent = msg; box.appendChild(d);
-  setTimeout(()=> { d.style.opacity='0'; setTimeout(()=> d.remove(), 300); }, ttl);
+function notify(msg, ttl=2600){
+  const box = el('notifBox'); const d=document.createElement('div'); d.className='notif'; d.textContent = msg; box.appendChild(d);
+  setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>d.remove(),320); }, ttl);
 }
 
-/* ===========================
-   Game State
-   =========================== */
+/* -----------------------
+   Game state
+   ----------------------- */
 const STATE = {
   mapSize: 600,
-  player: { x:300, z:300, y:0, money:15000, guns:1, cars:0, speed:2.0, hp:100 },
+  player: { x:300, z:300, y:0, money:18000, guns:1, cars:0, speed:2.6, hp:100 },
   buildings: [], // {kind,x,z,sx,sz,height}
-  vaults: [], // {buildingIndex, locked, attempts, dialSolution, reward}
-  police: [],
+  vaults: [],   // {buildingIndex,locked,attempts,dialSolution,reward}
+  vehicles: [], // runtime vehicles {x,z,type}
+  shops: [],    // references to certain building indices
+  difficulty: 'NORMAL',
+  graphics: 'med',
   heat: 0,
-  preset: 'normal'
+  lastSaved: null
 };
 
-/* expose for other parts */
-window.vh_state = STATE;
+/* export for other parts */
+window._vh_state = STATE;
 
-/* ===========================
-   WebGL Bootstrap (safe)
-   =========================== */
+/* -----------------------
+   WebGL safe initialization
+   ----------------------- */
 const canvas = el('glcanvas');
 let gl = null;
 function initGL(){
-  // Try to get WebGL context with conservative options
-  const opts = {
-    antialias: false,
-    alpha: false,
-    depth: true,
-    stencil: false,
-    preserveDrawingBuffer: false,
-    powerPreference: "default",
-    failIfMajorPerformanceCaveat: false
-  };
+  const opts = { antialias:false, alpha:false, depth:true, stencil:false, preserveDrawingBuffer:false, powerPreference:'default', failIfMajorPerformanceCaveat:false };
   gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
   if (!gl) {
-    // if WebGL unavailable (shouldn't be in your case), show message and fallback to 2D canvas later
-    console.error('WebGL not available.');
     el('sceneWrap').innerHTML = '<div style="color:#fff;padding:20px">WebGL が利用できません。管理者に相談してください。</div>';
     return false;
   }
-  // set basic GL state
-  gl.clearColor(0.03, 0.08, 0.12, 1.0);
+  gl.clearColor(0.03,0.06,0.09,1.0);
   gl.enable(gl.DEPTH_TEST);
   gl.depthFunc(gl.LEQUAL);
   gl.enable(gl.CULL_FACE);
@@ -156,1100 +164,518 @@ function initGL(){
   return true;
 }
 
-/* ===========================
-   Shaders (minimal lambert + color)
-   =========================== */
-const VERT_SRC = `
-attribute vec3 aPosition;
-attribute vec3 aNormal;
-attribute vec4 aColor;
-uniform mat4 uMVP;
-uniform mat4 uModel;
-uniform mat4 uNormalMat;
-varying vec3 vNormal;
-varying vec4 vColor;
+/* -----------------------
+   Minimal shaders (Lambert-like) optimized for compatibility
+   ----------------------- */
+const VSH = `
+attribute vec3 aPos; attribute vec3 aNormal; attribute vec4 aColor;
+uniform mat4 uMVP; uniform mat4 uModel; uniform mat4 uNormal;
+varying vec3 vNormal; varying vec4 vColor;
 void main(){
-  gl_Position = uMVP * vec4(aPosition, 1.0);
-  vNormal = mat3(uNormalMat) * aNormal;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+  vNormal = mat3(uNormal) * aNormal;
   vColor = aColor;
 }
 `;
-const FRAG_SRC = `
+const FSH = `
 precision mediump float;
-varying vec3 vNormal;
-varying vec4 vColor;
-uniform vec3 uLightDir;
-uniform float uLightIntensity;
+varying vec3 vNormal; varying vec4 vColor;
+uniform vec3 uLightDir; uniform vec3 uAmbient;
 void main(){
   vec3 n = normalize(vNormal);
-  float diff = max(dot(n, normalize(uLightDir)), 0.0);
-  vec3 base = vColor.rgb;
-  vec3 ambient = base * 0.28;
-  vec3 diffuse = base * diff * uLightIntensity;
-  gl_FragColor = vec4(ambient + diffuse, vColor.a);
+  float d = max(dot(n, normalize(uLightDir)), 0.0);
+  vec3 col = vColor.rgb * (uAmbient + d * 0.9);
+  gl_FragColor = vec4(col, vColor.a);
 }
 `;
 
-/* Shader helper */
-function compileShader(src, type){
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, src);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-    return null;
-  }
-  return shader;
+function compile(src, type){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error('Shader error', gl.getShaderInfoLog(s)); return null; }
+  return s;
 }
-function createProgram(vsSrc, fsSrc){
-  const vs = compileShader(vsSrc, gl.VERTEX_SHADER);
-  const fs = compileShader(fsSrc, gl.FRAGMENT_SHADER);
-  if (!vs || !fs) return null;
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs); gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.error('Program link error:', gl.getProgramInfoLog(prog));
-    return null;
-  }
-  return prog;
+function linkProgram(vs, fs){
+  const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error('Program link error', gl.getProgramInfoLog(p)); return null; }
+  return p;
 }
 
-/* ===========================
-   Geometry helpers (box)
-   =========================== */
-function createBoxMesh(sx, sy, sz, color){
-  // returns typed arrays for positions, normals, colors, indices
-  // cube centered at origin
+/* -----------------------
+   VBO utilities: create box mesh arrays
+   ----------------------- */
+function makeBoxData(sx, sy, sz, color){
   const x = sx/2, y = sy/2, z = sz/2;
-  const positions = new Float32Array([
+  const positions = [
     // front
-    -x,-y, z,  x,-y, z,  x, y, z,  -x,y,z,
+    -x,-y,z,  x,-y,z,  x,y,z, -x,y,z,
     // back
-    x,-y,-z, -x,-y,-z, -x,y,-z,  x,y,-z,
+    x,-y,-z, -x,-y,-z, -x,y,-z, x,y,-z,
     // left
-    -x,-y,-z, -x,-y, z, -x,y,z, -x,y,-z,
+    -x,-y,-z, -x,-y,z, -x,y,z, -x,y,-z,
     // right
-    x,-y, z, x,-y,-z, x,y,-z, x,y,z,
+    x,-y,z, x,-y,-z, x,y,-z, x,y,z,
     // top
     -x,y,z, x,y,z, x,y,-z, -x,y,-z,
     // bottom
     -x,-y,-z, x,-y,-z, x,-y,z, -x,-y,z
-  ]);
-  const normals = new Float32Array([
-    // front
+  ];
+  const normals = [
+    // front...
     0,0,1, 0,0,1, 0,0,1, 0,0,1,
-    // back
-    0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1,
-    // left
+    0,0,-1,0,0,-1,0,0,-1,0,0,-1,
     -1,0,0,-1,0,0,-1,0,0,-1,0,0,
-    // right
     1,0,0,1,0,0,1,0,0,1,0,0,
-    // top
     0,1,0,0,1,0,0,1,0,0,1,0,
-    // bottom
     0,-1,0,0,-1,0,0,-1,0,0,-1,0
-  ]);
-  // color per vertex
-  const c = color; // RGB [0..1]
-  const colors = new Float32Array(4*6*4); // 24 vertices
-  for (let i=0;i<24;i++){ colors[i*4+0]=c[0]; colors[i*4+1]=c[1]; colors[i*4+2]=c[2]; colors[i*4+3]=1.0; }
-  const indices = new Uint16Array([
-    0,1,2, 0,2,3,    4,5,6, 4,6,7,
-    8,9,10, 8,10,11, 12,13,14, 12,14,15,
-    16,17,18, 16,18,19, 20,21,22, 20,22,23
-  ]);
-  return { positions, normals, colors, indices };
+  ];
+  const indices = [
+    0,1,2,0,2,3, 4,5,6,4,6,7, 8,9,10,8,10,11,
+    12,13,14,12,14,15, 16,17,18,16,18,19, 20,21,22,20,22,23
+  ];
+  const colors = [];
+  for (let i=0;i<24;i++){ colors.push(color[0], color[1], color[2], 1.0); }
+  return { positions: new Float32Array(positions), normals: new Float32Array(normals), colors: new Float32Array(colors), indices: new Uint16Array(indices) };
 }
 
-/* ===========================
-   GL Program & Buffers
-   =========================== */
-let program = null;
-let attribs = {}, uniforms = {};
+/* -----------------------
+   GL program and buffers
+   ----------------------- */
+let program = null, attrs = {}, unis = {};
 let vboPos=null, vboNorm=null, vboColor=null, ibo=null;
-let vertexCount = 0;
-function prepareGL(){
-  program = createProgram(VERT_SRC, FRAG_SRC);
-  if (!program) { console.error('Failed to create GL program'); return false; }
-  attribs.aPosition = gl.getAttribLocation(program, 'aPosition');
-  attribs.aNormal = gl.getAttribLocation(program, 'aNormal');
-  attribs.aColor = gl.getAttribLocation(program, 'aColor');
-  uniforms.uMVP = gl.getUniformLocation(program, 'uMVP');
-  uniforms.uModel = gl.getUniformLocation(program, 'uModel');
-  uniforms.uNormalMat = gl.getUniformLocation(program, 'uNormalMat');
-  uniforms.uLightDir = gl.getUniformLocation(program, 'uLightDir');
-  uniforms.uLightIntensity = gl.getUniformLocation(program, 'uLightIntensity');
+let totalIndices = 0;
+function setupGLProgram(){
+  const vs = compile(VSH, gl.VERTEX_SHADER), fs = compile(FSH, gl.FRAGMENT_SHADER);
+  if (!vs || !fs) return false;
+  program = linkProgram(vs, fs);
+  attrs.aPos = gl.getAttribLocation(program, 'aPos');
+  attrs.aNormal = gl.getAttribLocation(program, 'aNormal');
+  attrs.aColor = gl.getAttribLocation(program, 'aColor');
+  unis.uMVP = gl.getUniformLocation(program, 'uMVP');
+  unis.uModel = gl.getUniformLocation(program, 'uModel');
+  unis.uNormal = gl.getUniformLocation(program, 'uNormal');
+  unis.uLightDir = gl.getUniformLocation(program, 'uLightDir');
+  unis.uAmbient = gl.getUniformLocation(program, 'uAmbient');
 
-  // create buffers
   vboPos = gl.createBuffer(); vboNorm = gl.createBuffer(); vboColor = gl.createBuffer(); ibo = gl.createBuffer();
   return true;
 }
 
-/* ===========================
-   Scene data (single VBO with repeated boxes)
-   We'll upload many boxes by concatenating vertex arrays for each building.
-   =========================== */
-function buildSceneBuffers(){
-  // Build geometry for all buildings + ground + player marker + big test box
-  const parts = [];
-  const idxMap = []; // holds offsets for each part
-  let vertexOffset = 0, indexOffset = 0;
-  const indicesArray = [];
-  const positionsArray = [];
-  const normalsArray = [];
-  const colorsArray = [];
-  // ground: a large flat box (very thin)
-  const ground = createBoxMesh(STATE.mapSize, 2, STATE.mapSize, [0.09,0.16,0.20]);
-  appendMesh(ground, [0, -1, 0]); // model at y=-1 so top at y=0
+/* -----------------------
+   Build scene VBO: ground + all buildings + test markers + player marker
+   We'll pack them in big buffers; rebuilding is triggered when map or player marker changes.
+   ----------------------- */
+function buildBuffers(){
+  const posArr = [], normArr = [], colArr = [], idxArr = [];
+  let idxOffset = 0;
+  // ground: thin box
+  const ground = makeBoxData(STATE.mapSize, 2, STATE.mapSize, [0.09,0.16,0.20]);
+  appendMesh(ground, [0, -1, 0]);
   // buildings
-  STATE.buildings.forEach((b, i)=>{
-    // box at (b.x - map/2, height/2, b.z - map/2)
-    const h = b.height || rand(22, 86);
-    const col = hexToRgbNorm(kindColor(b.kind));
-    const mesh = createBoxMesh(b.sx, h, b.sz, col);
-    appendMesh(mesh, [b.x - STATE.mapSize/2, h/2, b.z - STATE.mapSize/2]);
+  STATE.buildings.forEach(b=>{
+    const color = hexToNorm(kindToHex(b.kind));
+    const mesh = makeBoxData(b.sx, b.height, b.sz, color);
+    appendMesh(mesh, [b.x - STATE.mapSize/2, b.height/2, b.z - STATE.mapSize/2]);
   });
-  // big test box (easy to spot)
-  const testMesh = createBoxMesh(28, 28, 28, [1.0, 0.25, 0.25]);
-  appendMesh(testMesh, [0, 14, 0]); // center
-  // player marker box
-  const pm = createBoxMesh(8, 18, 8, [1.0, 0.78, 0.34]);
-  appendMesh(pm, [STATE.player.x - STATE.mapSize/2, 9, STATE.player.z - STATE.mapSize/2]);
+  // vehicles icons (small boxes)
+  STATE.vehicles.forEach(v=>{
+    const col = v.type==='car'?[0.6,0.25,0.16]:[0.4,0.7,0.2];
+    const m = makeBoxData(6,4,10, col);
+    appendMesh(m, [v.x - STATE.mapSize/2, 2, v.z - STATE.mapSize/2]);
+  });
+  // big test box center to ensure visible
+  const test = makeBoxData(28,28,28, [1.0,0.3,0.26]); appendMesh(test, [0,14,0]);
+  // player marker
+  const pm = makeBoxData(8,18,8, [1.0,0.78,0.34]); appendMesh(pm, [STATE.player.x - STATE.mapSize/2, 9, STATE.player.z - STATE.mapSize/2]);
 
-  // helper functions to accumulate
-  function appendMesh(mesh, modelTranslate){
-    const basePosLen = positionsArray.length/3;
-    // model transform: translate vertices by modelTranslate
-    for (let i=0;i<mesh.positions.length/3;i++){
-      const vx = mesh.positions[i*3+0] + modelTranslate[0];
-      const vy = mesh.positions[i*3+1] + modelTranslate[1];
-      const vz = mesh.positions[i*3+2] + modelTranslate[2];
-      positionsArray.push(vx, vy, vz);
+  function appendMesh(m, translate){
+    const base = posArr.length/3;
+    // positions
+    for (let i=0;i<m.positions.length;i+=3){
+      posArr.push(m.positions[i]+translate[0], m.positions[i+1]+translate[1], m.positions[i+2]+translate[2]);
     }
-    for (let i=0;i<mesh.normals.length;i++) normalsArray.push(mesh.normals[i]);
-    for (let i=0;i<mesh.colors.length;i++) colorsArray.push(mesh.colors[i]);
-    for (let i=0;i<mesh.indices.length;i++){
-      indicesArray.push(mesh.indices[i] + basePosLen);
-    }
+    for (let i=0;i<m.normals.length;i++) normArr.push(m.normals[i]);
+    for (let i=0;i<m.colors.length;i++) colArr.push(m.colors[i]);
+    for (let i=0;i<m.indices.length;i++) idxArr.push(m.indices[i] + base);
   }
 
-  // upload to GL
-  const posArr = new Float32Array(positionsArray);
-  const normArr = new Float32Array(normalsArray);
-  const colArr = new Float32Array(colorsArray);
-  const idxArr = new Uint16Array(indicesArray);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.bufferData(gl.ARRAY_BUFFER, posArr, gl.STATIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.bufferData(gl.ARRAY_BUFFER, normArr, gl.STATIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboColor); gl.bufferData(gl.ARRAY_BUFFER, colArr, gl.STATIC_DRAW);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxArr, gl.STATIC_DRAW);
-
-  vertexCount = idxArr.length;
+  // upload buffers
+  const positions = new Float32Array(posArr), normals = new Float32Array(normArr), colors = new Float32Array(colArr), indices = new Uint16Array(idxArr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboColor); gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+  totalIndices = indices.length;
 }
 
-/* ===========================
-   Helpers
-   =========================== */
-function hexToRgbNorm(hex){
-  const r = ((hex>>16)&0xff)/255, g = ((hex>>8)&0xff)/255, b = (hex&0xff)/255;
-  return [r,g,b];
-}
-
-/* ===========================
-   Camera and Matrices
-   =========================== */
-// minimal mat4 functions (no external lib)
-function mat4Identity(){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }
+/* -----------------------
+   Basic math / matrices (small helpers)
+   ----------------------- */
+function mat4Identity(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
 function mat4Multiply(a,b){
-  const o = new Array(16);
+  const o = new Float32Array(16);
   for (let i=0;i<4;i++){
     for (let j=0;j<4;j++){
-      o[i*4+j] = 0;
-      for (let k=0;k<4;k++) o[i*4+j] += a[i*4+k] * b[k*4+j];
+      let s=0; for (let k=0;k<4;k++) s += a[i*4+k]*b[k*4+j]; o[i*4+j] = s;
     }
   }
   return o;
 }
 function mat4Translate(t){ const m = mat4Identity(); m[12]=t[0]; m[13]=t[1]; m[14]=t[2]; return m; }
-function mat4RotateY(a){ const c=Math.cos(a), s=Math.sin(a); return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; }
-function mat4RotateX(a){ const c=Math.cos(a), s=Math.sin(a); return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; }
-function mat4Scale(sx,sy,sz){ const m=mat4Identity(); m[0]=sx; m[5]=sy; m[10]=sz; return m; }
-function mat4Perspective(fov, aspect, near, far){
-  const f = 1.0 / Math.tan(fov/2);
-  const nf = 1/(near - far);
-  const out = new Array(16).fill(0);
+function mat4RotateY(a){ const c=Math.cos(a), s=Math.sin(a); return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]); }
+function mat4RotateX(a){ const c=Math.cos(a), s=Math.sin(a); return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]); }
+function mat4Scale(x,y,z){ const m = mat4Identity(); m[0]=x; m[5]=y; m[10]=z; return m; }
+function mat4Perspective(fovy, aspect, near, far){
+  const f = 1.0/Math.tan(fovy/2); const nf = 1/(near - far);
+  const out = new Float32Array(16);
   out[0]=f/aspect; out[5]=f; out[10]=(far+near)*nf; out[11]=-1; out[14]=(2*far*near)*nf;
   return out;
 }
 function mat4LookAt(eye, center, up){
-  const zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
-  let len = Math.hypot(zx,zy,zz); if (len===0) { zx=0; zy=0; zz=1; } else { zx/=len; zy/=len; zz/=len; }
-  let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
-  len = Math.hypot(xx,xy,xz); if(len===0){ xx=0; xy=0; xz=0; } else { xx/=len; xy/=len; xz/=len; }
-  let yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
-  const out = [ xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, 0,0,0,1 ];
-  const trans = mat4Translate([-eye[0], -eye[1], -eye[2]]);
-  return mat4Multiply(out, trans);
+  let zx = eye[0]-center[0], zy=eye[1]-center[1], zz=eye[2]-center[2]; let l = Math.hypot(zx,zy,zz); if(l===0){ zx=0;zy=0;zz=1; } else { zx/=l;zy/=l;zz/=l; }
+  let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx; l=Math.hypot(xx,xy,xz); if(l===0){ xx=0;xy=0;xz=0; } else { xx/=l;xy/=l;xz/=l; }
+  let yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+  const out = mat4Identity();
+  out[0]=xx; out[1]=yx; out[2]=zx; out[3]=0;
+  out[4]=xy; out[5]=yy; out[6]=zy; out[7]=0;
+  out[8]=xz; out[9]=yz; out[10]=zz; out[11]=0;
+  out[12]=-(xx*eye[0] + xy*eye[1] + xz*eye[2]);
+  out[13]=-(yx*eye[0] + yy*eye[1] + yz*eye[2]);
+  out[14]=-(zx*eye[0] + zy*eye[1] + zz*eye[2]);
+  out[15]=1;
+  return out;
 }
 
-/* ===========================
-   Render loop
-   =========================== */
-let cam = { x: STATE.player.x - STATE.mapSize/2, y:180, z: STATE.player.z + 220, yaw: -Math.PI/2 + 0.6, pitch: -0.45 };
-let lastTime = performance.now();
-function resizeCanvas(){
+/* -----------------------
+   Draw loop
+   ----------------------- */
+let cam = { x: STATE.player.x - STATE.mapSize/2 + 0, y:260, z: STATE.player.z + 360, yaw: -Math.PI/2+0.7, pitch: -0.45 };
+let lastTime = performance.now(), rebuildDebounce = 0;
+function update(dt){
+  // keyboard movement
+  processKeyboard(dt);
+  // stick movement -> already applied when moving
+  // update camera to orbit around player
+  updateCameraFromAngles();
+  // dynamic day/night: simple cycle
+  const dayT = (performance.now()/1000/30) % 1.0; // 30s per cycle
+  const ambientBase = 0.28 + 0.22 * Math.sin(dayT*Math.PI*2);
+  // draw frame
+  renderFrame(ambientBase);
+  // rebuild buffers occasionally if scheduled
+  if (rebuildDebounce > 0) { rebuildDebounce -= dt; if (rebuildDebounce <= 0) { buildBuffers(); } }
+  // HUD update
+  updateHUD();
+}
+function renderFrame(ambient){
+  // resize canvas if necessary
+  fitCanvas();
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(program);
+  // compute matrices
+  const eye = [cam.x, cam.y, cam.z];
+  const center = [STATE.player.x - STATE.mapSize/2, 0, STATE.player.z - STATE.mapSize/2];
+  const proj = mat4Perspective(60*Math.PI/180, canvas.width/canvas.height, 0.1, 2000);
+  const view = mat4LookAt(eye, center, [0,1,0]);
+  const mvp = mat4Multiply(proj, view);
+  const model = mat4Identity(); const normal = mat4Identity();
+  // bind attributes
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos); gl.enableVertexAttribArray(attrs.aPos); gl.vertexAttribPointer(attrs.aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm); gl.enableVertexAttribArray(attrs.aNormal); gl.vertexAttribPointer(attrs.aNormal, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboColor); gl.enableVertexAttribArray(attrs.aColor); gl.vertexAttribPointer(attrs.aColor, 4, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.uniformMatrix4fv(unis.uMVP, false, mvp);
+  gl.uniformMatrix4fv(unis.uModel, false, model);
+  gl.uniformMatrix4fv(unis.uNormal, false, normal);
+  gl.uniform3fv(unis.uLightDir, new Float32Array([0.5, 0.8, 0.2]));
+  gl.uniform3fv(unis.uAmbient, new Float32Array([ambient, ambient, ambient]));
+  gl.drawElements(gl.TRIANGLES, totalIndices, gl.UNSIGNED_SHORT, 0);
+  // call external part updates
+  try { if (window._part2_update) window._part2_update(0.016); if (window._part3_update) window._part3_update(0.016); } catch(e) {}
+}
+
+/* -----------------------
+   Camera & Input Helpers
+   ----------------------- */
+function updateCameraFromAngles(){
+  const targetX = STATE.player.x - STATE.mapSize/2, targetZ = STATE.player.z - STATE.mapSize/2;
+  const radius = 360;
+  cam.x = targetX + Math.cos(cam.pitch) * Math.cos(cam.yaw) * radius;
+  cam.y = Math.max(48, Math.sin(-cam.pitch) * 260 + 30);
+  cam.z = targetZ + Math.cos(cam.pitch) * Math.sin(cam.yaw) * radius;
+}
+
+function fitCanvas(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(480, Math.floor(canvas.clientWidth * dpr));
-  const h = Math.max(320, Math.floor(canvas.clientHeight * dpr));
+  const w = Math.max(640, Math.floor(canvas.clientWidth * dpr));
+  const h = Math.max(480, Math.floor(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w; canvas.height = h;
     gl.viewport(0,0,canvas.width,canvas.height);
   }
 }
-function renderFrame(nowTime){
-  const t = nowTime || performance.now();
-  const dt = Math.min(0.05, (t - lastTime)/1000);
-  lastTime = t;
-  // update player position via input smoothing (external input modifies STATE.player)
-  // compute camera target to look at player position
-  const px = STATE.player.x - STATE.mapSize/2, pz = STATE.player.z - STATE.mapSize/2, py = 0;
-  const eye = [cam.x, cam.y, cam.z];
-  const center = [px, py + 12, pz];
-  // update yaw/pitch - controls modify cam.yaw/cam.pitch
-  const cosYaw = Math.cos(cam.yaw), sinYaw = Math.sin(cam.yaw);
-  // set view matrix
-  const aspect = canvas.width / canvas.height;
-  const proj = mat4Perspective(60 * Math.PI/180, aspect, 0.1, 2000);
-  const view = mat4LookAt(eye, center, [0,1,0]);
-  // model matrix identity for global combined VBO (we baked translations into vertex positions)
-  const model = mat4Identity();
-  // normal matrix is inverse-transpose of model; for identity it's identity
-  const normalMat = mat4Identity();
-  const mvp = mat4Multiply(proj, view);
 
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.useProgram(program);
-
-  // bind buffers & attributes
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
-  gl.enableVertexAttribArray(attribs.aPosition);
-  gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm);
-  gl.enableVertexAttribArray(attribs.aNormal);
-  gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboColor);
-  gl.enableVertexAttribArray(attribs.aColor);
-  gl.vertexAttribPointer(attribs.aColor, 4, gl.FLOAT, false, 0, 0);
-
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-
-  // uniforms
-  gl.uniformMatrix4fv(uniforms.uMVP, false, new Float32Array(mvp));
-  gl.uniformMatrix4fv(uniforms.uModel, false, new Float32Array(model));
-  gl.uniformMatrix4fv(uniforms.uNormalMat, false, new Float32Array(normalMat));
-  const lightDir = [0.5, 0.8, 0.2];
-  gl.uniform3fv(uniforms.uLightDir, new Float32Array(lightDir));
-  gl.uniform1f(uniforms.uLightIntensity, 1.0);
-
-  // draw
-  gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, 0);
-
-  // update small HUD overlays (player marker in 3D, etc)
-  updatePlayerMarker();
-
-  // call part2/part3 updates if present (non-blocking)
-  try{ if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); } catch(e){ /* ignore */ }
-
-  requestAnimationFrame(renderFrame);
-}
-
-/* ===========================
-   Input Handling (mouse drag, touch swipe, keyboard, virtual stick)
-   =========================== */
-let dragging = false, lastMouse = null;
-canvas.addEventListener('pointerdown', (e)=>{
-  if (isElementUI(e.target)) return;
-  dragging = true; lastMouse = {x:e.clientX, y:e.clientY}; canvas.setPointerCapture(e.pointerId);
-});
-canvas.addEventListener('pointermove', (e)=>{
-  if (!dragging) return;
-  const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
-  lastMouse = {x:e.clientX, y:e.clientY};
-  // update camera yaw/pitch
-  cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch - dy * 0.004, -1.2, -0.12);
-  updateCameraFromAngles();
-});
-canvas.addEventListener('pointerup', (e)=>{ dragging = false; lastMouse = null; });
-
-function isElementUI(elm){ return elm.closest && (elm.closest('#hud') || elm.closest('#minimap') || elm.closest('#vaultModal') || elm.closest('.btn') || elm.closest('#controlsMobile')); }
-
-// touch swipe fallback (single touch)
-let lastTouch = null;
-canvas.addEventListener('touchstart', (e)=>{ if (e.touches.length===1){ lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY}; } });
-canvas.addEventListener('touchmove', (e)=>{ if (e.touches.length===1 && lastTouch){ const dx = e.touches[0].clientX - lastTouch.x, dy = e.touches[0].clientY - lastTouch.y; lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY}; cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch - dy * 0.004, -1.2, -0.12); updateCameraFromAngles(); } }, {passive:false});
-canvas.addEventListener('touchend', ()=>{ lastTouch=null; });
-
-// keyboard movement WASD
-const KEY = {};
-window.addEventListener('keydown', (e)=>{ KEY[e.key.toLowerCase()] = true; });
-window.addEventListener('keyup', (e)=>{ KEY[e.key.toLowerCase()] = false; });
+/* -----------------------
+   Keyboard & Stick input
+   ----------------------- */
+const KEYS = {};
+window.addEventListener('keydown', e=>{ KEYS[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e=>{ KEYS[e.key.toLowerCase()] = false; });
 
 function processKeyboard(dt){
-  let mx=0, mz=0;
-  if (KEY['w']||KEY['arrowup']) mz -= 1;
-  if (KEY['s']||KEY['arrowdown']) mz += 1;
-  if (KEY['a']||KEY['arrowleft']) mx -= 1;
-  if (KEY['d']||KEY['arrowright']) mx += 1;
-  if (mx!==0 || mz!==0){
-    // move in camera-relative direction projected to XZ
-    const forward = [-Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)]; // note: front vector
+  let mx = 0, mz = 0;
+  if (KEYS['w']||KEYS['arrowup']) mz -= 1;
+  if (KEYS['s']||KEYS['arrowdown']) mz += 1;
+  if (KEYS['a']||KEYS['arrowleft']) mx -= 1;
+  if (KEYS['d']||KEYS['arrowright']) mx += 1;
+  if (mx !== 0 || mz !== 0){
+    const forward = [-Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
     const right = [Math.sin(cam.yaw), 0, -Math.cos(cam.yaw)];
     const len = Math.hypot(mx, mz) || 1;
     const nx = (right[0]*mx + forward[0]*mz)/len;
     const nz = (right[2]*mx + forward[2]*mz)/len;
     STATE.player.x += nx * STATE.player.speed * 40 * dt;
     STATE.player.z += nz * STATE.player.speed * 40 * dt;
-    // clamp
     STATE.player.x = clamp(STATE.player.x, 0, STATE.mapSize);
     STATE.player.z = clamp(STATE.player.z, 0, STATE.mapSize);
-    // update player marker in GL buffers requires rebuild next frame; for simplicity we rebuild occasionally below
-    scheduleBufferRebuild();
+    scheduleRebuild();
   }
 }
 
-/* virtual joystick */
-let stickCenter=null, draggingStick=false;
+/* virtual stick */
+let stickCenter = null, draggingStick = false;
 const stickOuter = el('joyZone'), stickInner = el('stickInner');
-stickOuter.addEventListener('pointerdown', (e)=>{ e.preventDefault(); draggingStick = true; stickOuter.setPointerCapture(e.pointerId); const r = stickOuter.getBoundingClientRect(); stickCenter = {x:r.left + r.width/2, y:r.top + r.height/2}; onStickMove(e.clientX, e.clientY); });
-window.addEventListener('pointermove', (e)=>{ if (draggingStick) onStickMove(e.clientX, e.clientY); });
-window.addEventListener('pointerup', (e)=>{ if (draggingStick){ draggingStick=false; stickInner.style.transform = 'translate(0,0)'; STATE.inputStick = {x:0,y:0}; } });
+stickOuter.addEventListener('pointerdown', e=>{ e.preventDefault(); draggingStick=true; stickOuter.setPointerCapture(e.pointerId); const r = stickOuter.getBoundingClientRect(); stickCenter={x:r.left+r.width/2, y:r.top+r.height/2}; onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointermove', e=>{ if (draggingStick) onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointerup', e=>{ if (draggingStick){ draggingStick=false; stickInner.style.transform='translate(0,0)'; STATE.inputStick={x:0,y:0}; } });
 function onStickMove(cx, cy){
-  const dx = cx - stickCenter.x, dy = cy - stickCenter.y;
-  const max = 44;
+  const dx = cx - stickCenter.x, dy = cy - stickCenter.y; const max = 44;
   const nx = clamp(dx/max, -1, 1), ny = clamp(dy/max, -1, 1);
   stickInner.style.transform = `translate(${clamp(dx,-max,max)}px, ${clamp(dy,-max,max)}px)`;
-  STATE.inputStick = { x: nx, y: ny };
-  // convert to player move
+  // feed movement
   const ang = cam.yaw;
   const vx = nx * Math.cos(ang) - ny * Math.sin(ang);
   const vz = nx * Math.sin(ang) + ny * Math.cos(ang);
   STATE.player.x += vx * STATE.player.speed * 20 * 0.016;
   STATE.player.z += vz * STATE.player.speed * 20 * 0.016;
-  scheduleBufferRebuild();
+  STATE.player.x = clamp(STATE.player.x, 0, STATE.mapSize);
+  STATE.player.z = clamp(STATE.player.z, 0, STATE.mapSize);
+  scheduleRebuild();
 }
 
-/* update camera position from yaw/pitch and ensure above ground */
-function updateCameraFromAngles(){
-  // camera orbits around player target
-  const targetX = STATE.player.x - STATE.mapSize/2;
-  const targetZ = STATE.player.z - STATE.mapSize/2;
-  const radius = 220; // distance
-  cam.x = targetX + Math.cos(cam.pitch) * Math.cos(cam.yaw) * radius;
-  cam.y = targetX*0 + Math.sin(-cam.pitch) * 220 + 30; // keep above ground
-  cam.z = targetZ + Math.cos(cam.pitch) * Math.sin(cam.yaw) * radius;
-}
+/* pointer drag to rotate view */
+let dragging = false, lastPointer = null;
+canvas.addEventListener('pointerdown', e=>{ if (isUI(e.target)) return; dragging=true; lastPointer={x:e.clientX,y:e.clientY}; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e=>{ if (!dragging) return; const dx = e.clientX - lastPointer.x, dy = e.clientY - lastPointer.y; lastPointer={x:e.clientX,y:e.clientY}; cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch - dy * 0.004, -1.2, -0.12); });
+canvas.addEventListener('pointerup', e=>{ dragging=false; lastPointer=null; });
+function isUI(target){ return target.closest && (target.closest('#hud') || target.closest('#minimap') || target.closest('.modal') || target.closest('#controlsMobile')); }
 
-/* ===========================
-   Buffer rebuild scheduling
-   =========================== */
-let rebuildScheduled = false;
-function scheduleBufferRebuild(){
-  if (!rebuildScheduled){
-    rebuildScheduled = true;
-    setTimeout(()=>{ rebuildScheduled = false; buildSceneBuffers(); }, 200);
+/* -----------------------
+   Map generation & shops & vehicles
+   ----------------------- */
+function kindToHex(kind){
+  switch(kind){
+    case 'bank': return 0x2ecc71;
+    case 'conbini': return 0x3498db;
+    case 'pachinko': return 0xe67e22;
+    case 'carshop': return 0x9b59b6;
+    case 'slots': return 0xf1c40f;
+    case 'blackmarket': return 0xe84393;
+    default: return 0x95a5a6;
   }
 }
+function hexToNorm(hex){ return [(hex>>16 & 0xff)/255, (hex>>8 & 0xff)/255, (hex & 0xff)/255]; }
 
-/* ===========================
-   World generation (buildings + vaults)
-   =========================== */
-function generateMap(seed){
-  STATE.buildings = []; STATE.vaults = [];
-  const cell = 60;
-  const cols = Math.floor(STATE.mapSize / cell);
+function generateMap(){
+  STATE.buildings = []; STATE.vaults = []; STATE.vehicles = []; STATE.shops = [];
+  const cell = 60; const cols = Math.floor(STATE.mapSize / cell);
   for (let r=0;r<cols;r++){
     for (let c=0;c<cols;c++){
-      const x = c*cell + rand(8, cell-8);
-      const z = r*cell + rand(8, cell-8);
+      const x = c*cell + rand(8, cell-8), z = r*cell + rand(8, cell-8);
       const roll = Math.random();
       let kind = 'dummy';
-      if (roll < 0.02) kind = 'bank';
-      else if (roll < 0.07) kind = 'conbini';
-      else if (roll < 0.11) kind = 'pachinko';
-      else if (roll < 0.14) kind = 'carshop';
-      else if (roll < 0.16) kind = 'slots';
-      else if (roll < 0.17) kind = 'blackmarket';
-      const sx = rand(12,36), sz = rand(12,36), h = rand(22, 86);
-      STATE.buildings.push({ kind, x, z, sx, sz, height: h });
-      if (kind === 'bank' || kind === 'conbini' || kind === 'pachinko') {
-        STATE.vaults.push({ buildingIndex: STATE.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward: kind==='bank'?50000:(kind==='pachinko'?15000:4200) });
+      if (roll < 0.02) kind='bank';
+      else if (roll < 0.07) kind='conbini';
+      else if (roll < 0.11) kind='pachinko';
+      else if (roll < 0.14) kind='carshop';
+      else if (roll < 0.16) kind='slots';
+      else if (roll < 0.17) kind='blackmarket';
+      const sx = rand(12,38), sz = rand(12,38), h = rand(20,86);
+      STATE.buildings.push({kind,x,z,sx,sz,height:h});
+      if (kind==='bank' || kind==='conbini' || kind==='pachinko'){
+        STATE.vaults.push({buildingIndex: STATE.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward: kind==='bank'?50000:(kind==='pachinko'?15000:4200)});
       }
+      if (kind==='carshop' || kind==='slots' || kind==='blackmarket') STATE.shops.push(STATE.buildings.length-1);
     }
   }
-  if (!STATE.buildings.some(b=>b.kind==='bank')){
-    const x = rand(80, STATE.mapSize-80), z = rand(80, STATE.mapSize-80);
-    STATE.buildings.push({ kind:'bank', x, z, sx:56, sz:56, height:72 });
-    STATE.vaults.push({ buildingIndex: STATE.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:50000 });
-  }
+  if (!STATE.buildings.some(b=>b.kind==='bank')) { const x=rand(80,STATE.mapSize-80), z=rand(80,STATE.mapSize-80); STATE.buildings.push({kind:'bank',x,z,sx:56,sz:56,height:72}); STATE.vaults.push({buildingIndex:STATE.buildings.length-1,locked:true,attempts:0,dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)],reward:50000}); }
+  // spawn some vehicles
+  for (let i=0;i<10;i++){ const vx = rand(40, STATE.mapSize-40), vz = rand(40, STATE.mapSize-40); STATE.vehicles.push({x:vx,z:vz,type:'car'}); }
   el('vaultCount').textContent = STATE.vaults.length;
-  scheduleBufferRebuild();
+  scheduleRebuild();
+  drawMiniImmediate();
 }
 
-/* ===========================
-   Minimap drawing (2D)
-   =========================== */
-const mini = el('mini'); const mctx = mini.getContext('2d');
-function drawMinimap(){
+/* -----------------------
+   Minimap
+   ----------------------- */
+const mini = el('mini'), mctx = mini.getContext('2d');
+function drawMiniImmediate(){
   const W = mini.width, H = mini.height; mctx.clearRect(0,0,W,H);
   mctx.fillStyle = '#02111a'; mctx.fillRect(0,0,W,H);
   const s = W / STATE.mapSize;
   STATE.buildings.forEach(b=>{
-    const x = b.x * s, y = b.z * s, w = clamp(b.sx * s, 3, 18), h = clamp(b.sz * s, 3, 18);
-    mctx.fillStyle = (b.kind==='bank'?'#2ecc71':(b.kind==='conbini'?'#3498db':(b.kind==='pachinko'?'#e67e22':'#95a5a6')));
-    mctx.fillRect(x - w/2, y - h/2, w, h);
+    const x = Math.round(b.x * s), y = Math.round(b.z * s), w = clamp(Math.round(b.sx * s), 3, 18), h = clamp(Math.round(b.sz * s), 3, 18);
+    const col = kindToHex(b.kind);
+    mctx.fillStyle = `#${('00000'+(col.toString(16))).slice(-6)}`; mctx.fillRect(x-w/2, y-h/2, w, h);
   });
-  const px = STATE.player.x * s, pz = STATE.player.z * s; mctx.fillStyle = '#ffde59'; mctx.beginPath(); mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
+  // vehicles
+  STATE.vehicles.forEach(v=>{ mctx.fillStyle='#ffcc55'; mctx.fillRect(Math.round(v.x*s)-2, Math.round(v.z*s)-2, 4,4); });
+  // player
+  const px = Math.round(STATE.player.x * (W/STATE.mapSize)), pz = Math.round(STATE.player.z * (H/STATE.mapSize));
+  mctx.beginPath(); mctx.fillStyle = '#ffde59'; mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
 }
 
-/* ===========================
-   Player marker update (synchronize last inserted player mesh to current pos)
-   Because we baked player mesh into buffers, easiest is to rebuild occasionally.
-   We'll rebuild every 250ms if player moved.
-   =========================== */
-let lastPlayerPos = {x:STATE.player.x, z:STATE.player.z}, lastRebuildTime = 0;
-function updatePlayerMarker(){
-  const now = performance.now();
-  if (Math.abs(STATE.player.x - lastPlayerPos.x) > 1 || Math.abs(STATE.player.z - lastPlayerPos.z) > 1) {
-    if (now - lastRebuildTime > 250) { lastRebuildTime = now; lastPlayerPos = {x:STATE.player.x, z:STATE.player.z}; scheduleBufferRebuild(); }
-  }
-}
-
-/* ===========================
-   HUD / UI wiring
-   =========================== */
-el('btnNewMap').addEventListener('click', ()=>{ generateMap(); drawMinimap(); notify('マップを生成しました'); });
-el('btnSave').addEventListener('click', ()=>{ try{ const dat = { player: STATE.player, buildings: STATE.buildings, vaults: STATE.vaults, time: Date.now() }; localStorage.setItem('vh_save_core', JSON.stringify(dat)); notify('保存しました'); }catch(e){ notify('保存に失敗しました'); }});
-el('btnInteract').addEventListener('click', ()=> tryInteractNearby());
-el('btnFire').addEventListener('click', ()=> notify('発砲: Part3で演出を実装します'));
-el('presetSelect').addEventListener('change', (e)=>{ STATE.preset = e.target.value; notify('プリセット: ' + e.target.value); });
-
-function tryInteractNearby(){
-  let nearest = null, nd = 1e9, idx = -1;
-  STATE.buildings.forEach((b,i)=>{ const d = Math.hypot(b.x - STATE.player.x, b.z - STATE.player.z); if (d < nd){ nd=d; nearest = b; idx=i; } });
-  if (nearest && nd < 36) {
-    notify('建物: ' + nearest.kind);
-    if (['bank','conbini','pachinko'].includes(nearest.kind)){
-      const vault = STATE.vaults.find(v=>v.buildingIndex===idx && v.locked);
-      if (vault) { openVaultModal(vault); return; } else notify('この建物の金庫は解錠済み'); return;
-    } else {
-      notify('建物に侵入できます（Part3で室内を実装）'); return;
-    }
-  } else notify('近くに入れる建物がありません');
-}
-
-function openVaultModal(v){
-  el('vaultModal').classList.add('open'); el('vaultModal').setAttribute('aria-hidden','false');
-  el('vaultMsg').textContent = `近くの金庫 (報酬: ${fmtMoney(v.reward)}) 。Part2でダイヤルUIを実装します。`;
-  window._currentVault = v;
-}
-el('closeVault').addEventListener('click', ()=>{ el('vaultModal').classList.remove('open'); el('vaultModal').setAttribute('aria-hidden','true'); window._currentVault = null; });
-
-/* ===========================
-   Build buffers and start
-   =========================== */
-let buffersPrepared = false;
-function start(){
-  fitCanvasToDisplay();
-  if (!initGL()) { return; }
-  if (!prepareGL()) { return; }
-  generateMap();
-  // build initial buffers and start render
-  buildSceneBuffers(); // will populate VBOs
-  drawMinimap();
-  updateHUD();
-  updateCameraFromAngles();
-  requestAnimationFrame(renderFrame);
-  // kick periodic keyboard/joystick processing
-  setInterval(()=>{ processKeyboard(0.04); updateHUD(); }, 40);
-  window._part1_ready = true;
-  window._part1_update = function(dt){}; // placeholder for other parts
-  notify('Part1: WebGL描画初期化完了');
-}
-
-/* canvas size fitting (pixel ratio aware) */
-function fitCanvasToDisplay(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(600, Math.floor(canvas.clientWidth * dpr));
-  const h = Math.max(400, Math.floor(canvas.clientHeight * dpr));
-  canvas.width = w; canvas.height = h;
-  if (gl) gl.viewport(0,0,canvas.width, canvas.height);
-}
-
-/* update HUD numbers */
+/* -----------------------
+   HUD update
+   ----------------------- */
 function updateHUD(){
   el('money').textContent = fmtMoney(STATE.player.money);
   el('guns').textContent = STATE.player.guns;
   el('cars').textContent = STATE.player.cars;
-  el('heat').textContent = Math.round(STATE.heat || 0);
+  el('heat').textContent = Math.round(STATE.heat);
 }
 
-/* ensure resize handling */
-window.addEventListener('resize', ()=>{ fitCanvasToDisplay(); drawMinimap(); });
+/* -----------------------
+   Buffer rebuild scheduling
+   ----------------------- */
+let rebuildScheduled = false;
+function scheduleRebuild(){
+  if (!rebuildScheduled){ rebuildScheduled = true; setTimeout(()=>{ rebuildScheduled=false; buildBuffers(); }, 160); }
+}
 
-/* small utility: createBoxMesh used in buildSceneBuffers needs to be in-scope - already defined above */
+/* -----------------------
+   UI wiring
+   ----------------------- */
+el('btnNewMap').addEventListener('click', ()=>{ generateMap(); drawMiniImmediate(); notify('新しいマップを生成しました'); });
+el('btnSave').addEventListener('click', ()=>{ try{ const save = { player: STATE.player, buildings: STATE.buildings, vaults: STATE.vaults, time: Date.now() }; localStorage.setItem('vh_part1_save', JSON.stringify(save)); notify('保存しました'); }catch(e){ notify('保存に失敗しました'); }});
+el('btnInteract').addEventListener('click', ()=> tryInteractNearby());
+el('btnVault').addEventListener('click', ()=> openVaultNearby());
+el('btnEnter').addEventListener('click', ()=> tryEnterNearby());
+el('closeVault').addEventListener('click', ()=>{ el('vaultModal').classList.remove('open'); el('vaultModal').setAttribute('aria-hidden','true'); });
 
-/* Finally, init GL and start */
-start();
+el('graphicsQuality').addEventListener('change', e=>{ STATE.graphics = e.target.value; notify('描画品質: '+e.target.value); scheduleRebuild(); });
+el('difficultySel').addEventListener('change', e=>{ STATE.difficulty = e.target.value; notify('難易度: '+e.target.value); });
 
-/* expose some useful hooks for Part2/Part3 */
+/* -----------------------
+   Interaction helpers (vault/shop/enter)
+   ----------------------- */
+function findNearestBuilding(range=36){
+  let nearest=null, nd=1e9, idx=-1;
+  STATE.buildings.forEach((b,i)=>{ const d = Math.hypot(b.x-STATE.player.x, b.z-STATE.player.z); if (d < nd){ nd=d; nearest=b; idx=i; } });
+  if (nearest && nd <= range) return { building: nearest, index: idx, dist: nd }; return null;
+}
+
+function tryInteractNearby(){ const n = findNearestBuilding(); if (!n){ notify('近くに入れる建物がありません'); return; } notify('建物: '+n.building.kind); if (n.building.kind === 'carshop' || n.building.kind==='slots' || n.building.kind==='blackmarket'){ openShop(n.index); } else { notify('ここは侵入できるタイプではありません'); } }
+
+function openVaultNearby(){
+  const n = findNearestBuilding(); if (!n){ notify('近くに金庫はありません'); return; }
+  const vault = STATE.vaults.find(v => v.buildingIndex === n.index && v.locked);
+  if (!vault){ notify('この建物に金庫はありません（または既に解錠済み）'); return; }
+  // show modal
+  el('vaultModal').classList.add('open'); el('vaultModal').setAttribute('aria-hidden','false');
+  el('vaultMsg').textContent = `金庫: 報酬 ${fmtMoney(vault.reward)} — Part2でダイヤルUIを実装します。`;
+  window._currentVault = vault;
+}
+
+function openShop(buildingIndex){
+  const b = STATE.buildings[buildingIndex];
+  el('shopTitle').textContent = `ショップ: ${b.kind}`;
+  const body = el('shopBody'); body.innerHTML = '';
+  if (b.kind==='carshop'){
+    body.innerHTML = `<div>車を購入できます（デモ）</div><div style="margin-top:8px"><button id="buyCar" class="btn small">車を購入 ¥12000</button></div>`;
+    setTimeout(()=>{ el('buyCar').addEventListener('click', ()=>{ if (STATE.player.money >= 12000){ STATE.player.money -= 12000; STATE.player.cars += 1; notify('車を購入しました'); updateHUD(); } else notify('所持金が足りません'); }); }, 10);
+  } else if (b.kind==='slots'){
+    body.innerHTML = `<div>スロット（デモ） - 1回 ¥200</div><div style="margin-top:8px"><button id="playSlot" class="btn small">プレイ</button></div>`;
+    setTimeout(()=>{ el('playSlot').addEventListener('click', ()=>{ if (STATE.player.money >= 200){ STATE.player.money -= 200; const win = Math.random() < 0.08; if (win){ const r = rand(600,8000); STATE.player.money += r; notify('当たり！ '+fmtMoney(r)); } else notify('ハズレ'); updateHUD(); } else notify('所持金が足りません'); }); },10);
+  } else if (b.kind==='blackmarket'){
+    body.innerHTML = `<div>闇銃屋（デモ） — 銃を購入できます</div><div style="margin-top:8px"><button id="buyGun" class="btn small">銃を購入 ¥4000</button></div>`;
+    setTimeout(()=>{ el('buyGun').addEventListener('click', ()=>{ if (STATE.player.money >= 4000){ STATE.player.money -= 4000; STATE.player.guns += 1; notify('銃を購入しました'); updateHUD(); } else notify('所持金が足りません'); }); },10);
+  } else {
+    body.innerHTML = `<div>このショップはまだ中身がありません。</div>`;
+  }
+  el('shopModal').classList.add('open'); el('shopModal').setAttribute('aria-hidden','false');
+  el('closeShop').addEventListener('click', ()=>{ el('shopModal').classList.remove('open'); el('shopModal').setAttribute('aria-hidden','true'); });
+}
+
+function tryEnterNearby(){
+  const n = findNearestBuilding(); if (!n){ notify('近くに建物がありません'); return; }
+  notify('建物に侵入: ' + n.building.kind + '（内部はPart3で実装）');
+  // expose a hook for Part3 to handle actual interior scene
+  if (window.enterBuilding) window.enterBuilding(n.index);
+}
+
+/* -----------------------
+   Utility: schedule buffer rebuild (debounce)
+   ----------------------- */
+function scheduleRebuild(){
+  rebuildScheduled = true;
+  if (typeof scheduleRebuildTimer !== 'undefined') clearTimeout(scheduleRebuildTimer);
+  scheduleRebuildTimer = setTimeout(()=>{ rebuildScheduled=false; buildBuffers(); }, 200);
+}
+
+/* -----------------------
+   Kind color helper
+   ----------------------- */
+function kindToHex(kind){
+  switch(kind){ case 'bank': return 0x2ecc71; case 'conbini': return 0x3498db; case 'pachinko': return 0xe67e22; case 'carshop': return 0x9b59b6; case 'slots': return 0xf1c40f; case 'blackmarket': return 0xe84393; default: return 0x95a5a6; }
+}
+
+/* -----------------------
+   Initialization
+   ----------------------- */
+let bufferBuilt = false;
+let frameReq = null, lastT = performance.now();
+function start(){
+  if (!initGL()) return;
+  const vs = compile(VSH, gl.VERTEX_SHADER), fs = compile(FSH, gl.FRAGMENT_SHADER);
+  if (!vs || !fs) { notify('シェーダ初期化失敗'); return; }
+  if (!setupGLProgram()) { notify('GLプログラム構築失敗'); return; }
+  // create initial data
+  generateMap();
+  // build buffers and start loop
+  buildBuffers();
+  drawMiniImmediate();
+  updateHUD();
+  // animation loop using rAF
+  function loop(t){
+    const dt = Math.min(0.05, (t - lastT)/1000); lastT = t;
+    processKeyboard(dt);
+    update(dt);
+    frameReq = requestAnimationFrame(loop);
+  }
+  frameReq = requestAnimationFrame(loop);
+  // expose hooks
+  window._part1_ready = true;
+  window._part1_update = function(dt){}; // placeholder for other parts
+  window._part1_rebuild = scheduleRebuild;
+  notify('Part1 初期化完了 — 3D表示中');
+}
+
+/* -----------------------
+   Expose useful functions for Part2/Part3
+   ----------------------- */
 window.generateMap = generateMap;
-window.buildSceneBuffers = buildSceneBuffers;
-window.drawMinimap = drawMinimap;
+window.drawMinimap = drawMiniImmediate;
 window.updateHUD = updateHUD;
 window.tryInteractNearby = tryInteractNearby;
-window.openVaultModal = openVaultModal;
+window.openVaultModal = function(v){ window._currentVault = v; el('vaultModal').classList.add('open'); el('vaultModal').setAttribute('aria-hidden','false'); el('vaultMsg').textContent = `金庫: ${fmtMoney(v.reward)}（Part2でUI）`; };
+window.enterBuilding = function(bIndex){ notify('enterBuilding hook called (Part3 may render interior)'); };
+
+/* -----------------------
+   Kick off
+   ----------------------- */
+start();
 
 </script>
 </body>
 </html>
-<script>
-/* =========================
-   Part2 — Vault / Dial / Effects (Self-contained)
-   - Append this script directly after Part1's script in the same HTML file.
-   - Expects Part1 to expose:
-       window._part1_ready  (boolean)
-       window._currentVault (when a vault modal is opened)
-       window.tryInteractNearby / window.openVaultModal (optional)
-       requestAnimationFrame loop calls window._part2_update(dt) each frame (Part1 does)
-   - Assets (place in /assets):
-       /assets/safe_dial.png
-       /assets/safe_body.png
-       /assets/led_green.png
-       /assets/led_red.png
-       /assets/click.mp3
-       /assets/latch_open.mp3
-       /assets/alarm.mp3
-   - No external libs used.
-   ========================= */
-
-(function(){
-  // ======= Configuration =======
-  const ASSET_BASE = './assets';
-  const ASSETS = {
-    safe_dial: `${ASSET_BASE}/safe_dial.png`,
-    safe_body: `${ASSET_BASE}/safe_body.png`,
-    led_green: `${ASSET_BASE}/led_green.png`,
-    led_red: `${ASSET_BASE}/led_red.png`,
-    click: `${ASSET_BASE}/click.mp3`,
-    latch: `${ASSET_BASE}/latch_open.mp3`,
-    alarm: `${ASSET_BASE}/alarm.mp3`
-  };
-
-  // Particle / effect tuning
-  const CFG = {
-    sparkCount: 120,
-    smokeCount: 22,
-    debrisCount: 18,
-    sparkLife: 0.9,
-    smokeLife: 2.0,
-    debrisLife: 2.2,
-    dialFlickerMs: 140,
-    shakeMs: 700,
-    shakeIntensity: 10
-  };
-
-  // ======= State =======
-  const state = {
-    enabled: true,
-    overlayCanvas: null,
-    overlayCtx: null,
-    particles: [], // {type, x,y, vx,vy, life, age, size, color}
-    sounds: {},
-    currentVault: null,
-    dial: {
-      angle: 0,
-      dragging: false,
-      lastPointerAngle: 0,
-      autoSpinTween: null
-    },
-    digits: [0,0,0,0]
-  };
-
-  // ======= Utility =======
-  function $(id){ return document.getElementById(id); }
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-  function rand(min,max){ return Math.random()*(max-min)+min; }
-  function now(){ return performance.now()/1000; }
-
-  // ======= Audio loading (HTMLAudioElement fallback) =======
-  function loadAudio(path){
-    try{
-      const a = new Audio();
-      a.src = path;
-      a.preload = 'auto';
-      a.volume = 0.6;
-      return a;
-    }catch(e){
-      console.warn('Audio load failed', e);
-      return null;
-    }
-  }
-  state.sounds.click = loadAudio(ASSETS.click);
-  state.sounds.latch = loadAudio(ASSETS.latch);
-  state.sounds.alarm = loadAudio(ASSETS.alarm);
-
-  // ======= Overlay canvas for particles/effects =======
-  function createOverlay(){
-    // place canvas on top of Part1's gl canvas
-    const glCanvas = document.querySelector('#glcanvas');
-    if (!glCanvas) {
-      console.warn('Part2: gl canvas not found; overlay will attach to body');
-    }
-    const overlay = document.createElement('canvas');
-    overlay.style.position = 'absolute';
-    overlay.style.left = '0';
-    overlay.style.top = '0';
-    overlay.style.pointerEvents = 'none';
-    overlay.style.zIndex = 150;
-    overlay.id = 'vh_overlay';
-    const parent = glCanvas && glCanvas.parentElement ? glCanvas.parentElement : document.body;
-    parent.appendChild(overlay);
-    state.overlayCanvas = overlay;
-    state.overlayCtx = overlay.getContext('2d');
-    resizeOverlay();
-    window.addEventListener('resize', resizeOverlay);
-  }
-  function resizeOverlay(){
-    const overlay = state.overlayCanvas;
-    const glCanvas = document.querySelector('#glcanvas');
-    if (!overlay) return;
-    if (glCanvas) {
-      const rect = glCanvas.getBoundingClientRect();
-      overlay.style.width = rect.width + 'px';
-      overlay.style.height = rect.height + 'px';
-      overlay.style.left = rect.left + 'px';
-      overlay.style.top = rect.top + 'px';
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      overlay.width = Math.max(200, Math.floor(rect.width * dpr));
-      overlay.height = Math.max(120, Math.floor(rect.height * dpr));
-      state.overlayCtx.setTransform(dpr,0,0,dpr,0,0);
-    } else {
-      // fallback full window
-      overlay.width = Math.floor(window.innerWidth * (window.devicePixelRatio||1));
-      overlay.height = Math.floor(window.innerHeight * (window.devicePixelRatio||1));
-      state.overlayCtx.setTransform(1,0,0,1,0,0);
-    }
-  }
-
-  // ======= Particle system (2D overlay) =======
-  function spawnSparks(x,y,count=CFG.sparkCount, color='rgba(255,220,120,1)'){
-    for (let i=0;i<count;i++){
-      const ang = Math.random()*Math.PI*2;
-      const sp = {
-        type:'spark',
-        x, y,
-        vx: Math.cos(ang) * (Math.random()*160 + 20),
-        vy: Math.sin(ang) * (Math.random()*80 - 40),
-        life: CFG.sparkLife,
-        age: 0,
-        size: Math.random()*2 + 1,
-        color
-      };
-      state.particles.push(sp);
-    }
-  }
-  function spawnSmoke(x,y,count=CFG.smokeCount){
-    for (let i=0;i<count;i++){
-      state.particles.push({
-        type:'smoke',
-        x: x + (Math.random()-0.5)*18,
-        y: y + (Math.random()-0.5)*8,
-        vx: (Math.random()-0.5)*12,
-        vy: - (10 + Math.random()*28),
-        life: CFG.smokeLife * (0.8 + Math.random()*0.6),
-        age: 0,
-        size: 12 + Math.random()*28,
-        color: 'rgba(160,160,160,0.9)'
-      });
-    }
-  }
-  function spawnDebris(x,y,count=CFG.debrisCount){
-    for (let i=0;i<count;i++){
-      state.particles.push({
-        type:'debris',
-        x, y,
-        vx: (Math.random()-0.5)*120,
-        vy: - (Math.random()*140 + 40),
-        life: CFG.debrisLife,
-        age: 0,
-        size: 4 + Math.random()*10,
-        color: 'rgba(200,200,220,1)'
-      });
-    }
-  }
-
-  function updateParticles(dt){
-    const ctx = state.overlayCtx;
-    if (!ctx) return;
-    // integrate
-    for (let i=state.particles.length-1;i>=0;i--){
-      const p = state.particles[i];
-      p.age += dt;
-      if (p.age > p.life){ state.particles.splice(i,1); continue; }
-      // simple gravity & drag
-      p.vy += 120 * dt * (p.type === 'debris' ? 1.0 : 0.18);
-      p.vx *= (1 - 0.05 * dt);
-      p.vy *= (1 - 0.02 * dt);
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-    }
-    // draw
-    ctx.clearRect(0,0,state.overlayCanvas.width, state.overlayCanvas.height);
-    state.particles.forEach(p=>{
-      const t = 1 - (p.age / p.life);
-      if (p.type === 'spark'){
-        ctx.globalAlpha = clamp(t * 1.2,0,1);
-        ctx.fillStyle = p.color;
-        const s = p.size * (1 + (1-t)*1.6);
-        ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
-      } else if (p.type === 'smoke'){
-        ctx.globalAlpha = clamp(0.9 * (1 - p.age / p.life), 0, 0.9);
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*2);
-        g.addColorStop(0, 'rgba(190,190,190,0.9)');
-        g.addColorStop(1, 'rgba(80,80,80,0.0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * (1 + (p.age / p.life)), 0, Math.PI*2);
-        ctx.fill();
-      } else if (p.type === 'debris'){
-        ctx.globalAlpha = clamp(1 - (p.age / p.life), 0,1);
-        ctx.fillStyle = p.color;
-        const s = p.size;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.age * 6);
-        ctx.fillRect(-s/2, -s/2, s, s);
-        ctx.restore();
-      }
-    });
-    ctx.globalAlpha = 1.0;
-  }
-
-  // ======= Screen shake (applies CSS transform to glcanvas) =======
-  let shakeEndAt = 0;
-  let shakeIntensity = 0;
-  function startShake(ms = CFG.shakeMs, intensity = CFG.shakeIntensity){
-    const canvas = document.querySelector('#glcanvas');
-    if (!canvas) return;
-    shakeEndAt = performance.now() + ms;
-    shakeIntensity = intensity;
-    // ensure overlay is visible to draw particles
-    // we'll animate by setting transform each frame in updateShake()
-  }
-  function updateShake(){
-    const canvas = document.querySelector('#glcanvas');
-    if (!canvas) return;
-    const nowMs = performance.now();
-    if (nowMs < shakeEndAt){
-      const left = (Math.random()-0.5) * shakeIntensity;
-      const top = (Math.random()-0.5) * (shakeIntensity*0.6);
-      const rot = (Math.random()-0.5) * 0.8;
-      canvas.style.transform = `translate(${left}px, ${top}px) rotate(${rot}deg)`;
-    } else {
-      canvas.style.transform = '';
-    }
-  }
-
-  // ======= Dial UI construction (replaces Part1's modal content) =======
-  function installVaultUI(){
-    const modal = $('vaultModal');
-    if (!modal) {
-      console.warn('Part2: vaultModal not found — creating fallback modal');
-      const m = document.createElement('div'); m.id = 'vaultModal'; m.className = 'modal'; document.body.appendChild(m);
-    }
-    // populate modal
-    const safeBodyImg = `<img id="p_safe_body" src="${ASSETS.safe_body}" alt="safe" style="position:absolute;right:6px;bottom:6px;max-height:100%;object-fit:contain;opacity:0.98;" onerror="this.style.display='none'">`;
-    const ledGreen = `<img id="p_led_green" src="${ASSETS.led_green}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'>">`;
-    const ledRed = `<img id="p_led_red" src="${ASSETS.led_red}" style="position:absolute;left:12px;top:12px;width:36px;height:36px;display:none" onerror="this.style.display='none'>">`;
-
-    modal.innerHTML = `
-      <div style="display:flex;gap:12px;align-items:flex-start">
-        <div style="flex:1;display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:18px;font-weight:800">金庫クラッキング</div>
-          <div style="font-size:13px;color:#cbd6dc">ダイヤルを回して4桁を合わせろ。1桁合致するごとに反応が出る。</div>
-          <div id="safeBodyWrap" style="position:relative;height:300px;background:#0a0a0d;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
-            ${safeBodyImg}
-            <div id="dialCanvasWrap" style="width:260px;height:260px;display:flex;align-items:center;justify-content:center;">
-              <canvas id="p_dial_canvas" width="260" height="260" style="width:260px;height:260px;touch-action:none"></canvas>
-            </div>
-            ${ledGreen}
-            ${ledRed}
-          </div>
-        </div>
-        <div style="width:260px;display:flex;flex-direction:column;gap:8px">
-          <div style="font-weight:700">ダイヤルと桁</div>
-          <div id="p_digits" style="display:flex;gap:8px;justify-content:center"></div>
-          <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
-            <button id="p_attempt_btn" class="btn">解除を試す</button>
-            <button id="p_close_btn" class="btn">閉じる</button>
-          </div>
-          <div style="margin-top:10px;font-size:13px;color:#cfd9de">ヒント: 回して合わせるとランプが光る。5回失敗で警察が接近する。</div>
-        </div>
-      </div>
-    `;
-
-    // wire buttons
-    $('p_close_btn').addEventListener('click', ()=>{ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); state.currentVault = null; window._currentVault = null; });
-    $('p_attempt_btn').addEventListener('click', ()=> attemptOpen());
-
-    // dial canvas interactions
-    const dialCanvas = $('p_dial_canvas');
-    const dctx = dialCanvas.getContext('2d');
-    const dialImg = new Image(); dialImg.src = ASSETS.safe_dial;
-    dialImg.onerror = ()=>{ /* fallback */ };
-
-    // draw function
-    function drawDial(angle){
-      dctx.clearRect(0,0,dialCanvas.width,dialCanvas.height);
-      dctx.save();
-      dctx.translate(dialCanvas.width/2, dialCanvas.height/2);
-      dctx.rotate(angle);
-      if (dialImg.complete && dialImg.naturalWidth > 0){
-        dctx.drawImage(dialImg, -dialCanvas.width/2, -dialCanvas.height/2, dialCanvas.width, dialCanvas.height);
-      } else {
-        // fallback dial
-        dctx.fillStyle = '#111';
-        dctx.beginPath(); dctx.arc(0,0, dialCanvas.width*0.45, 0, Math.PI*2); dctx.fill();
-        dctx.lineWidth = 6; dctx.strokeStyle = '#444'; dctx.stroke();
-      }
-      dctx.restore();
-      // center knob
-      dctx.beginPath(); dctx.arc(dialCanvas.width/2, dialCanvas.height/2, 12,0,Math.PI*2); dctx.fillStyle = '#0d0d0d'; dctx.fill();
-    }
-    // initial draw
-    drawDial(0);
-    state.dial.draw = drawDial;
-
-    // pointer interactions for rotation
-    let dragging = false;
-    dialCanvas.addEventListener('pointerdown', (e)=>{
-      e.preventDefault();
-      const r = dialCanvas.getBoundingClientRect();
-      const cx = r.left + r.width/2, cy = r.top + r.height/2;
-      const ang = Math.atan2(e.clientY - cy, e.clientX - cx);
-      state.dial.dragging = true;
-      state.dial.lastPointerAngle = ang;
-    });
-    window.addEventListener('pointermove', (e)=>{
-      if (!state.dial.dragging) return;
-      const r = dialCanvas.getBoundingClientRect(); const cx = r.left + r.width/2, cy = r.top + r.height/2;
-      const ang = Math.atan2(e.clientY - cy, e.clientX - cx);
-      const delta = ang - state.dial.lastPointerAngle;
-      state.dial.angle += delta;
-      state.dial.lastPointerAngle = ang;
-      // small tactile feedback: if degree crosses roughly each 2*PI/10 threshold (digit), play click
-      // detect digit crossing
-      // (not perfect but okay)
-      if (Math.random() < 0.2) { if (state.sounds && state.sounds.click) tryPlay(state.sounds.click); }
-      state.dial.draw(state.dial.angle);
-    });
-    window.addEventListener('pointerup', ()=>{ state.dial.dragging = false; });
-
-    // clickable digits UI
-    const digitsWrap = $('p_digits');
-    function renderDigits(){
-      digitsWrap.innerHTML = '';
-      for (let i=0;i<4;i++){
-        const d = document.createElement('div');
-        d.textContent = state.digits[i];
-        d.style.width = '62px'; d.style.height = '62px';
-        d.style.display='flex'; d.style.alignItems='center'; d.style.justifyContent='center';
-        d.style.fontSize='22px'; d.style.fontWeight='800'; d.style.background='rgba(255,255,255,0.03)';
-        d.style.borderRadius='8px'; d.style.cursor='pointer';
-        (function(idx,elDiv){
-          elDiv.addEventListener('click', ()=>{
-            state.digits[idx] = (state.digits[idx] + 1) % 10;
-            // small pop & sound
-            elDiv.animate([{ transform:'scale(0.94)' }, { transform:'scale(1.06)' }, { transform:'scale(1.0)' }], { duration:180, easing:'ease-in-out' });
-            if (state.sounds.click) tryPlay(state.sounds.click);
-            renderDigits();
-            // if matched this digit, trigger small effect
-            if (state.currentVault && state.digits[idx] === state.currentVault.dialSolution[idx]){
-              // compute screen pos of this digit element for spawn
-              const rect = elDiv.getBoundingClientRect();
-              spawnSparks(rect.left + rect.width/2 - getOverlayLeft(), rect.top + rect.height/2 - getOverlayTop(), 36);
-            }
-          });
-        })(i,d);
-        digitsWrap.appendChild(d);
-      }
-    }
-    renderDigits();
-  }
-
-  function getOverlayLeft(){
-    const ov = state.overlayCanvas;
-    if (!ov) return 0;
-    const rect = ov.getBoundingClientRect();
-    return rect.left;
-  }
-  function getOverlayTop(){
-    const ov = state.overlayCanvas;
-    if (!ov) return 0;
-    const rect = ov.getBoundingClientRect();
-    return rect.top;
-  }
-
-  // ======= Attempt open logic =======
-  function attemptOpen(){
-    const vault = window._currentVault || state.currentVault;
-    if (!vault){ notify('金庫が見つかりません'); return; }
-    // compare digits
-    let correct = 0;
-    for (let i=0;i<4;i++) if (state.digits[i] === vault.dialSolution[i]) correct++;
-    vault.attempts = (vault.attempts || 0) + 1;
-    // audio
-    if (state.sounds && state.sounds.latch) tryPlay(state.sounds.latch);
-    // spin dial cosmetic
-    autoSpinDial();
-    // feedback
-    if (correct === 4){
-      // success
-      vault.locked = false;
-      // reward
-      try { if (window.vh_state && window.vh_state.player) window.vh_state.player.money = (window.vh_state.player.money || 0) + vault.reward; } catch(e){}
-      notify('金庫解錠！ 報酬: ' + (vault.reward ? (Math.floor(vault.reward).toLocaleString('ja-JP') + '円') : '???'));
-      // visual explosion near building
-      const b = (window.vh_state && window.vh_state.buildings && window.vh_state.buildings[vault.buildingIndex]) || null;
-      let cx = canvasCenterX(), cy = canvasCenterY();
-      if (b){
-        // translate building world pos to overlay canvas coords
-        const gcanvas = document.querySelector('#glcanvas');
-        if (gcanvas){
-          const rect = gcanvas.getBoundingClientRect();
-          // approximate mapping: Part1 centers player at center; so we show explosion near center for now
-          cx = rect.width/2; cy = rect.height/2;
-        }
-      }
-      spawnSparks(cx, cy, 160);
-      spawnSmoke(cx, cy, 24);
-      spawnDebris(cx, cy, 12);
-      // green led
-      const g = $('p_led_green'); const r = $('p_led_red'); if (g) g.style.display='block'; if (r) r.style.display='none';
-      // camera shake
-      startShake(900, 16);
-      // close modal after short delay
-      setTimeout(()=>{ $('vaultModal').classList.remove('open'); $('vaultModal').setAttribute('aria-hidden','true'); state.currentVault = null; window._currentVault = null; }, 900);
-    } else {
-      // partial or fail
-      if (state.sounds && state.sounds.click) tryPlay(state.sounds.click);
-      notify(correct + ' 桁一致');
-      // red led flash
-      const g = $('p_led_green'); const r = $('p_led_red'); if (r) r.style.display='block'; if (g) g.style.display='none';
-      // localized effects
-      const gcanvas = state.overlayCanvas;
-      const cx = gcanvas ? gcanvas.width/2 : (canvasCenterX()), cy = gcanvas ? gcanvas.height/2 : canvasCenterY();
-      spawnSparks(cx, cy, 48);
-      spawnSmoke(cx, cy, 6);
-      // alarm if too many attempts
-      if (vault.attempts >= 5){
-        if (state.sounds.alarm) tryPlay(state.sounds.alarm);
-        notify('失敗が続いた — 警察が接近します！');
-        // call Part3 police spawn if present
-        if (window.spawnPoliceNearPlayer) try { window.spawnPoliceNearPlayer(); } catch(e){}
-      }
-    }
-  }
-
-  // small spin tween for dial (no external tween lib)
-  let spinTweenActive = false;
-  function autoSpinDial(){
-    if (!state.dial.draw) return;
-    if (spinTweenActive) return;
-    spinTweenActive = true;
-    const start = state.dial.angle;
-    const extra = (Math.random()*6 + 3) * (Math.random()<0.5 ? -1 : 1);
-    const target = start + extra;
-    const dur = 650; const startTs = performance.now();
-    (function step(){
-      const t = (performance.now() - startTs) / dur;
-      if (t >= 1){
-        state.dial.angle = target;
-        state.dial.draw(state.dial.angle);
-        spinTweenActive = false;
-        return;
-      }
-      // ease out
-      const ease = 1 - Math.pow(1 - t, 3);
-      state.dial.angle = start + (target - start) * ease;
-      state.dial.draw(state.dial.angle);
-      requestAnimationFrame(step);
-    })();
-  }
-
-  // ======= Helpers =======
-  function tryPlay(audio){
-    try{ audio.currentTime = 0; audio.play().catch(()=>{}); }catch(e){}
-  }
-  function canvasCenterX(){ const rect = state.overlayCanvas ? state.overlayCanvas.getBoundingClientRect() : {width: window.innerWidth}; return (rect.width)/2; }
-  function canvasCenterY(){ const rect = state.overlayCanvas ? state.overlayCanvas.getBoundingClientRect() : {height: window.innerHeight}; return (rect.height)/2; }
-
-  // ======= Public API: open modal, set vault, render digits initial =======
-  function enhancedOpenVaultModal(vault){
-    // open modal and set current vault
-    state.currentVault = vault;
-    window._currentVault = vault;
-    // reset digits to random to avoid trivial
-    state.digits = [ rand(0,9)|0, rand(0,9)|0, rand(0,9)|0, rand(0,9)|0 ];
-    // ensure modal exists and UI installed
-    if (!$('vaultModal') || !$('p_dial_canvas')) installVaultUI(); // this will build DOM and wire events
-    // render digits
-    const dwrap = $('p_digits');
-    if (dwrap) {
-      // update digit elements if exist (re-render)
-      // We'll call renderDigits by invoking the click-handler's internal renderer; easiest is to re-create modal each open
-      installVaultUI(); // reinstall updates DOM and wiring, ok to call
-    }
-    // show modal
-    const modal = $('vaultModal'); modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
-    // ensure overlay exists
-    if (!state.overlayCanvas) createOverlay();
-    // show initial leds
-    const g = $('p_led_green'); const r = $('p_led_red'); if (r) r.style.display = 'block'; if (g) g.style.display='none';
-  }
-
-  // ======= main frame update hook (called from Part1 render loop) =======
-  let lastNow = performance.now();
-  window._part2_update = function(dt){
-    // dt provided by Part1 sometimes; if not compute
-    const tnow = performance.now();
-    const dd = (tnow - lastNow) / 1000;
-    lastNow = tnow;
-    // update particles in overlay space
-    updateParticles(dd);
-    // update shake by applying CSS transform
-    updateShake();
-  };
-
-  // ======= Initialization =======
-  // install overlay (but keep hidden until needed)
-  createOverlay();
-  // install modal UI now to avoid race later
-  installVaultUI();
-
-  // export API
-  window.enhancedOpenVaultModal = enhancedOpenVaultModal;
-  window.PART2 = {
-    spawnSparks: (x,y,c)=> spawnSparks(x,y,c||CFG.sparkCount),
-    spawnSmoke: (x,y,c)=> spawnSmoke(x,y,c||CFG.smokeCount),
-    spawnDebris: (x,y,c)=> spawnDebris(x,y,c||CFG.debrisCount),
-    triggerExplosionAtScreen: (x,y) => { spawnSparks(x,y,160); spawnSmoke(x,y,24); spawnDebris(x,y,20); startShake(900,16); },
-    tryPlaySound: tryPlay
-  };
-
-  console.info('Part2 loaded: Vault UI, dial, particles, sounds ready (self-contained).');
-})();
-</script>
