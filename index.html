@@ -3,1276 +3,527 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Vault Heist — Part1 (Remake) — F1 / FPS / Procedural City</title>
-
-<!-- Babylon core + loaders + GUI + postProcess -->
-<script src="https://cdn.babylonjs.com/babylon.js"></script>
-<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-<script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
-<!-- Ammo physics for realistic car behaviours (optional) -->
-<script src="https://cdn.babylonjs.com/ammo.js"></script>
-<!-- Howler for sounds -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
-
+<title>Vault Heist — Part1 (Offline-safe)</title>
 <style>
-  :root{
-    --bg:#071026; --hud:#0b1020; --accent:#ffd166;
-  }
-  html,body{ height:100%; margin:0; padding:0; background:var(--bg); color:#fff; font-family:Inter, Noto Sans JP, system-ui; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
-  #renderCanvas{ width:100%; height:100vh; display:block; touch-action:none; }
-  #hud{ position: absolute; left:12px; top:12px; z-index:60; display:flex; gap:10px; align-items:center; }
-  .badge{ background:rgba(0,0,0,0.45); padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.03); color:var(--accent); font-weight:700; }
-  #shopBtn{ position: absolute; right:12px; top:12px; z-index:60; padding:8px 12px; background:rgba(0,0,0,0.45); border-radius:8px; color:#fff; border:1px solid rgba(255,255,255,0.03); }
-  #controls{ position:absolute; bottom:14px; left:12px; right:12px; z-index:70; display:flex; justify-content:space-between; pointer-events:none; }
-  #joystick{ width:110px; height:110px; border-radius:999px; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.02), rgba(0,0,0,0.08)); pointer-events:auto; }
-  .action-buttons{ pointer-events:auto; display:flex; gap:10px; }
-  .act{ background:rgba(0,0,0,0.45); color:#fff; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.04); font-weight:700; }
-  #crosshair{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:10px; height:10px; border-radius:50%; background:#fff; opacity:0.85; z-index:50; pointer-events:none; }
-  #notice{ position:absolute; left:50%; bottom:72px; transform:translateX(-50%); z-index:80; color:#ffa0a0; display:none; background: rgba(0,0,0,0.45); padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.03);}
-  #preloader{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:100; color:#fff; background:rgba(0,0,0,0.6); padding:16px 18px; border-radius:12px; display:flex; gap:8px; align-items:center; }
-  #minimap{ position:absolute; right:12px; bottom:12px; width:160px; height:160px; z-index:70; background:rgba(0,0,0,0.25); border-radius:8px; border:1px solid rgba(255,255,255,0.03); }
-  .modal{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(8,10,14,0.95); color:#fff; padding:12px; border-radius:12px; z-index:200; display:none; width:min(780px,96%); max-width:780px; border:1px solid rgba(255,255,255,0.04); }
-  .hidden{ display:none !important; }
-  @media(max-width:520px){
-    #joystick{ width:84px; height:84px; }
-    .act{ padding:8px 10px; font-size:14px; }
-  }
+  :root{ --bg:#06101a; --panel:rgba(6,8,10,0.72); --accent:#ffde59; --muted:#98a8b3; }
+  html,body{height:100%;margin:0;padding:0;background:var(--bg);color:#e6eef6;font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  header{height:56px;display:flex;align-items:center;padding:8px 12px;background:linear-gradient(90deg,#071428,#081726);box-shadow:0 6px 16px rgba(0,0,0,0.45);z-index:40}
+  header h1{margin:0;font-size:15px}
+  header .controls{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{appearance:none;border:none;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);color:inherit;cursor:pointer}
+  #sceneWrap{flex:1;position:relative;overflow:hidden}
+  canvas#viewport{display:block;width:100%;height:100%;background:linear-gradient(180deg,#072033,#04101a);touch-action:none}
+  #hud{position:absolute;right:12px;top:72px;width:260px;background:var(--panel);border-radius:10px;padding:10px;backdrop-filter:blur(6px);z-index:55;border:1px solid rgba(255,255,255,0.03)}
+  #minimap{position:absolute;left:12px;top:72px;width:160px;height:160px;background:rgba(0,0,0,0.36);border-radius:8px;padding:8px;z-index:55;border:1px solid rgba(255,255,255,0.03)}
+  #controlsMobile{position:absolute;left:12px;bottom:12px;z-index:70;display:flex;gap:12px;align-items:flex-end}
+  .stickOuter{width:120px;height:120px;border-radius:999px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;touch-action:none}
+  .stickInner{width:54px;height:54px;border-radius:999px;background:rgba(255,255,255,0.06);transform:translate(0,0)}
+  .smallBtns{display:flex;flex-direction:column;gap:8px}
+  .notifBox{position:absolute;right:12px;bottom:12px;z-index:90;display:flex;flex-direction:column-reverse;gap:8px}
+  .notif{background:rgba(0,0,0,0.6);padding:8px 10px;border-radius:10px;color:#eaf1f6;font-size:13px}
+  .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0c0f;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);z-index:200;display:none;max-width:96%}
+  .modal.open{display:block}
+  footer{height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted);background:linear-gradient(90deg,#03050a,#061018)}
+  /* small responsive */
+  @media(max-width:720px){ #hud{width:200px} #minimap{width:120px;height:120px} }
 </style>
 </head>
 <body>
-  <canvas id="renderCanvas"></canvas>
-
-  <div id="hud">
-    <div class="badge">所持金: <span id="money">0</span> 円</div>
-    <div class="badge">ライフ: <span id="life">3</span></div>
-    <div class="badge">警報: <span id="alarm">0</span></div>
-  </div>
-  <button id="shopBtn" class="act">SHOP</button>
-
-  <div id="controls">
-    <div id="joystick"></div>
-    <div class="action-buttons">
-      <div class="act" id="btnAction">操作</div>
-      <div class="act" id="btnFire">撃つ</div>
-      <div class="act" id="btnEnter">乗る/降りる</div>
+<div id="app">
+  <header>
+    <h1>Vault Heist — Part1 (Offline-safe)</h1>
+    <div class="controls">
+      <select id="viewMode" class="btn" title="表示モード">
+        <option value="perspective">3D風パース</option>
+        <option value="topdown">トップダウン</option>
+      </select>
+      <button id="btnNewMap" class="btn">新しいマップ</button>
+      <button id="btnSave" class="btn">保存</button>
     </div>
-  </div>
+  </header>
 
-  <div id="crosshair"></div>
-  <div id="notice"></div>
-  <div id="preloader">ロード中... <span id="prePct">0%</span></div>
+  <div id="sceneWrap">
+    <canvas id="viewport" width="1600" height="900"></canvas>
 
-  <div id="shopModal" class="modal hidden" id="shopModal">
-    <h2>SHOP</h2>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <div style="flex:1 0 45%; background:rgba(255,255,255,0.03); padding:8px; border-radius:8px;">
-        <div>🔫 ハンドガン - 10,000円</div>
-        <div><button class="act buy" data-type="gun" data-gun="pistol" data-cost="10000">購入</button></div>
-      </div>
-      <div style="flex:1 0 45%; background:rgba(255,255,255,0.03); padding:8px; border-radius:8px;">
-        <div>🔫 SMG - 28,000円</div>
-        <div><button class="act buy" data-type="gun" data-gun="smg" data-cost="28000">購入</button></div>
-      </div>
-      <div style="width:100%; text-align:right;"><button class="act" id="shopClose">閉じる</button></div>
+    <div id="minimap"><canvas id="mini" width="300" height="300" style="width:100%;height:100%"></canvas><div style="font-size:12px;color:#cbd6dc;margin-top:6px">ミニマップ</div></div>
+
+    <div id="hud">
+      <div style="font-weight:700;margin-bottom:6px">プレイヤー</div>
+      <div>お金: <span id="money">¥0</span></div>
+      <div>銃: <span id="guns">0</span></div>
+      <div>車: <span id="cars">0</span></div>
+      <div>警戒度: <span id="heat">0</span></div>
+      <hr style="border:none;height:1px;background:rgba(255,255,255,0.03);margin:8px 0">
+      <div style="font-weight:700">マップ情報</div>
+      <div>サイズ: 600 × 600</div>
+      <div>金庫数: <span id="vaultCount">0</span></div>
+      <div style="height:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button id="btnInteract" class="btn">行動</button><button id="btnVault" class="btn">金庫</button></div>
     </div>
+
+    <div id="controlsMobile">
+      <div class="stickOuter" id="joyZone"><div class="stickInner" id="stickInner"></div></div>
+      <div class="smallBtns"><button id="btnFire" class="btn">発砲</button><button id="btnReload" class="btn">リロード</button></div>
+    </div>
+
+    <div class="notifBox" id="notifBox"></div>
+
+    <div id="vaultModal" class="modal" aria-hidden="true">
+      <h3>金庫（プレースホルダ）</h3>
+      <p id="vaultMsg">金庫ダイヤルUIは Part2 で完全実装します。近くの金庫の基本情報:</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+        <button id="closeVault" class="btn">閉じる</button>
+      </div>
+    </div>
+
   </div>
+
+  <footer>学校タブレット対応版 — 外部ライブラリ無しで動作</footer>
+</div>
 
 <script>
-/* ==========================================
-   Vault Heist — Part1 (Remake)
-   - Mid-poly targets (外部 glb の読み込み + フォールバック)
-   - Procedural city generation (600m x 600m)
-   - Player FPS rig (arms + weapon mount)
-   - Car procedural model (F1-like)
-   - Weapon firing (muzzle flash + bullet entities)
-   - Preloader/wait for assets
-   - Mobile controls + keyboard support
-   ========================================== */
+/* ==========================
+   Part1 Offline-safe (no external libs)
+   - Canvas2D renderer with pseudo-3D perspective
+   - Robust mobile + desktop controls
+   - Map auto-generation (600x600)
+   - Minimap, HUD, simple interactions
+   ========================== */
 
-if (typeof BABYLON === 'undefined') {
-  alert('Babylon.js が読み込めていません。CDNブロックを確認してください。');
-  throw new Error('Babylon.js required');
+/* --------------------------
+   Utilities
+   -------------------------- */
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function rand(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function fmtMoney(n){ return '¥' + Math.floor(n).toLocaleString('ja-JP'); }
+function el(id){ return document.getElementById(id); }
+function now(){ return performance.now(); }
+function notify(msg, ttl=2600){
+  const box = el('notifBox');
+  const d = document.createElement('div'); d.className='notif'; d.textContent = msg;
+  box.appendChild(d);
+  setTimeout(()=>{ d.style.opacity='0'; setTimeout(()=>d.remove(),300) }, ttl);
 }
 
-/* -------------------------
-   Sounds (Howler) - safe wrappers
-   ------------------------- */
-const HowlAvailable = typeof Howl !== 'undefined';
-function loadSound(url, opts={}){ if(!HowlAvailable) return { play:()=>{}, stop:()=>{} }; return new Howl(Object.assign({ src:[url] }, opts)); }
-const sShot = loadSound('https://assets.mixkit.co/sfx/preview/mixkit-short-laser-gun-shot-1670.mp3');
-const sHit  = loadSound('https://assets.mixkit.co/sfx/preview/mixkit-video-game-retro-click-237.wav');
-const sAlert= loadSound('https://assets.mixkit.co/sfx/preview/mixkit-police-siren-1648.mp3',{ loop:true });
-
-/* -------------------------
-   Persistence & HUD
-   ------------------------- */
-let money = Number(localStorage.getItem('vault_money') || 0);
-let life = Number(localStorage.getItem('vault_life') || 3);
-let alarmLevel = 0;
-function saveAll(){ localStorage.setItem('vault_money', String(money)); localStorage.setItem('vault_life', String(life)); }
-function updateHUD(){ document.getElementById('money').innerText = money; document.getElementById('life').innerText = life; document.getElementById('alarm').innerText = Math.round(alarmLevel); }
-updateHUD();
-
-/* -------------------------
-   Scene + Engine
-   ------------------------- */
-const canvas = document.getElementById('renderCanvas');
-const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true, disableWebGL2Support:false });
-const scene = new BABYLON.Scene(engine);
-scene.clearColor = new BABYLON.Color3(0.055,0.08,0.12);
-
-/* basic lighting + shadows */
-const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0,1,0), scene); hemi.intensity = 0.9;
-const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5,-1,0.2), scene); sun.position = new BABYLON.Vector3(50,80,50); sun.intensity = 1.0;
-const shadowGen = new BABYLON.ShadowGenerator(1024, sun);
-shadowGen.useBlurExponentialShadowMap = true; shadowGen.blurKernel = 6;
-
-/* ground / roads */
-const groundMat = new BABYLON.StandardMaterial('groundMat', scene);
-groundMat.diffuseColor = new BABYLON.Color3(0.06,0.08,0.1);
-const ground = BABYLON.MeshBuilder.CreateGround('ground', {width:600, height:600, subdivisions:4}, scene);
-ground.material = groundMat; ground.receiveShadows = true;
-
-/* fog for depth */
-scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
-scene.fogDensity = 0.0018;
-scene.fogColor = scene.clearColor.clone();
-
-/* -------------------------
-   Cameras (FPS + Vehicle follow)
-   ------------------------- */
-const fpsCamera = new BABYLON.UniversalCamera('fpsCam', new BABYLON.Vector3(0,1.8,0), scene);
-fpsCamera.minZ = 0.1; fpsCamera.speed = 0.0; fpsCamera.attachControl(canvas, true);
-const vehicleCam = new BABYLON.FollowCamera('vehCam', new BABYLON.Vector3(0,5,-12), scene);
-vehicleCam.lockedTarget = null;
-vehicleCam.heightOffset = 2; vehicleCam.radius = 8; vehicleCam.rotationOffset = 180;
-
-scene.activeCamera = fpsCamera;
-
-/* -------------------------
-   Utilities
-   ------------------------- */
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function randRange(a,b){ return a + Math.random()*(b-a); }
-function showNotice(msg, timeout=0){ const el=document.getElementById('notice'); el.style.display='block'; el.innerText = msg; if(timeout>0) setTimeout(()=>el.style.display='none', timeout); }
-
-/* -------------------------
-   Preloader & external assets list
-   ------------------------- */
-const ASSETS = {
-  models: {
-    car_glb: 'https://models.babylonjs.com/BoxTextured/glTF/BoxTextured.glb', // placeholder - midpoly car recommended here
-    pistol_glb: 'https://models.babylonjs.com/CesiumMan/CesiumMan.glb', // placeholder - replace with pistol glb
-    smg_glb: 'https://models.babylonjs.com/boombox.glb' // placeholder - replace with SMG glb
-  },
-  // environment textures could be added (HDR) in Part2
+/* --------------------------
+   Global game state
+   -------------------------- */
+const GAME = {
+  mapSize:600,
+  tileSize:10, // logical; for drawing we compute scale
+  player: { x:300, z:300, money:12000, guns:1, cars:0, speed:1.8 },
+  buildings: [], // {kind,x,z,sx,sz}
+  vaults: [], // {buildingIndex,locked, attempts, dialSolution, reward}
+  view: { mode:'perspective', angle: -0.35, tilt:0.45, zoom:1.0, offsetX:0, offsetY:0 },
+  input: { mx:0, my:0, moveX:0, moveY:0, firing:false },
+  lastFrame: now()
 };
-let assetsToLoad = 0;
-let assetsLoaded = 0;
-function trackAssetLoad(){ assetsLoaded++; const pct = Math.round(assetsLoaded / Math.max(1, assetsToLoad) * 100); document.getElementById('prePct').innerText = pct + '%'; if(assetsLoaded >= assetsToLoad){ document.getElementById('preloader').style.display = 'none'; showNotice('アセット読み込み完了 — 操作可能です', 3000); }}
 
-/* -------------------------
-   Procedural City Generation (buildings/roads)
-   ------------------------- */
-const BUILDINGS = [];
-const CITY = { size:600, blockSize:40 }; // grid of blocks
-function createCity(){
-  // generate a simple grid of streets and building blocks
-  const half = CITY.size / 2;
-  const block = CITY.blockSize;
-  for(let x = -half + block/2; x < half; x += block){
-    for(let z = -half + block/2; z < half; z += block){
-      // random chance for building vs park
-      if(Math.random() < 0.78){
-        // building footprint size random
-        const w = 10 + Math.floor(Math.random()*18);
-        const d = 8 + Math.floor(Math.random()*18);
-        const h = 6 + Math.floor(Math.random()*30);
-        const bmesh = BABYLON.MeshBuilder.CreateBox('bld', {width:w, depth:d, height:h}, scene);
-        const mat = new BABYLON.StandardMaterial('bmat'+x+z, scene);
-        // procedural façade color
-        const hue = 0.55 + Math.random()*0.25;
-        mat.diffuseColor = BABYLON.Color3.FromHexString(randomHexShade());
-        bmesh.material = mat;
-        bmesh.position = new BABYLON.Vector3(x + randRange(-4,4), h/2, z + randRange(-4,4));
-        bmesh.receiveShadows = true; bmesh.castShadow = true;
-        shadowGen.addShadowCaster(bmesh);
-        // tag building type sometimes
-        let type = 'residence';
-        const r = Math.random();
-        if(r < 0.03) type='casino';
-        else if(r < 0.06) type='bank';
-        else if(r < 0.12) type='convenience';
-        else if(r < 0.15) type='shop';
-        BUILDINGS.push({ mesh: bmesh, type, safe: null, opened:false });
-      } else {
-        // small park
-        const park = BABYLON.MeshBuilder.CreateGround('park',{width: 10 + Math.random()*15, height: 10 + Math.random()*15}, scene);
-        park.position = new BABYLON.Vector3(x, 0.01, z);
-        const pm = new BABYLON.StandardMaterial('pm'+x+z, scene); pm.diffuseColor = new BABYLON.Color3(0.08,0.18,0.08);
-        park.material = pm;
+/* --------------------------
+   Asset loading (optional / graceful fallback)
+   -------------------------- */
+const ASSET_BASE = './assets';
+const ASSETS = {
+  safe_dial: ASSET_BASE + '/safe_dial.png',
+  safe_body: ASSET_BASE + '/safe_body.png',
+  led_green: ASSET_BASE + '/led_green.png',
+  led_red: ASSET_BASE + '/led_red.png',
+  click: ASSET_BASE + '/click.mp3',
+  latch: ASSET_BASE + '/latch_open.mp3',
+  alarm: ASSET_BASE + '/alarm.mp3'
+};
+const AS = { imgs: {}, audio: {} };
+
+(function tryPreload(){
+  // images
+  ['safe_dial','safe_body','led_green','led_red'].forEach(k=>{
+    const img = new Image();
+    img.onload = ()=>{ AS.imgs[k] = img; };
+    img.onerror = ()=>{ /* missing is OK */ };
+    img.src = ASSETS[k];
+  });
+  // audio: create Audio elements but do not require them
+  ['click','latch','alarm'].forEach(k=>{
+    try {
+      const a = new Audio(); a.src = ASSETS[k]; a.preload = 'auto'; AS.audio[k] = a;
+    } catch(e){ /* ignore */ }
+  });
+})();
+
+/* --------------------------
+   Canvas & contexts
+   -------------------------- */
+const canvas = el('viewport');
+const ctx = canvas.getContext('2d');
+const mini = el('mini'); const mctx = mini.getContext('2d');
+
+/* resize handling */
+function fitCanvas(){
+  const wrap = canvas.parentElement;
+  canvas.width = Math.max(800, Math.floor(wrap.clientWidth * 1.0));
+  canvas.height = Math.max(500, Math.floor(wrap.clientHeight * 1.0));
+}
+window.addEventListener('resize', ()=>{ fitCanvas(); drawOnce(); });
+
+/* --------------------------
+   Map generation (600x600) with building placement
+   -------------------------- */
+function generateMap(){
+  GAME.buildings = []; GAME.vaults = [];
+  const cell = 60;
+  const cols = Math.floor(GAME.mapSize / cell);
+  for (let r=0;r<cols;r++){
+    for (let c=0;c<cols;c++){
+      const x = c*cell + rand(6, cell-6);
+      const z = r*cell + rand(6, cell-6);
+      const roll = Math.random();
+      let kind = 'dummy';
+      if (roll < 0.02) kind = 'bank';
+      else if (roll < 0.07) kind = 'conbini';
+      else if (roll < 0.11) kind = 'pachinko';
+      else if (roll < 0.14) kind = 'carshop';
+      else if (roll < 0.16) kind = 'slots';
+      else if (roll < 0.17) kind = 'blackmarket';
+      const sx = rand(12,36), sz = rand(12,36);
+      GAME.buildings.push({ kind, x, z, sx, sz });
+      if (kind === 'bank' || kind === 'conbini' || kind === 'pachinko'){
+        GAME.vaults.push({ buildingIndex: GAME.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward: kind==='bank'?50000:(kind==='pachinko'?15000:4200) });
       }
     }
   }
-
-  // Place dedicated important shops at approximate positions (replace nearest building)
-  placeSpecial('convenience', {x: 140, z: -120});
-  placeSpecial('casino', {x:-120, z: -60});
-  placeSpecial('bank', {x: 40, z: 160});
-  // Place shops cluster near center
-  placeSpecial('gunshop', {x: 60, z: 30});
-  placeSpecial('carshop', {x: -80, z: 20});
-}
-
-// helper: random hex shade for building color
-function randomHexShade(){
-  // pick a palette-ish color and vary
-  const palettes = ['#b5c7d6','#c9dbe2','#d8d3c9','#c9d6b5','#e3c9d6','#d6d6d6'];
-  return palettes[Math.floor(Math.random()*palettes.length)];
-}
-
-function placeSpecial(type, pos){
-  // find nearest building to pos and convert
-  let nearest=null, nd=1e9;
-  for(const b of BUILDINGS){
-    const d = BABYLON.Vector3.Distance(b.mesh.position, new BABYLON.Vector3(pos.x, b.mesh.position.y, pos.z));
-    if(d < nd){ nd=d; nearest=b; }
+  // ensure at least one bank
+  if (!GAME.buildings.some(b=>b.kind==='bank')) {
+    const x = rand(80, GAME.mapSize-80), z = rand(80, GAME.mapSize-80);
+    GAME.buildings.push({ kind:'bank', x, z, sx:56, sz:56 });
+    GAME.vaults.push({ buildingIndex: GAME.buildings.length-1, locked:true, attempts:0, dialSolution:[rand(0,9),rand(0,9),rand(0,9),rand(0,9)], reward:50000 });
   }
-  if(nearest){
-    nearest.type = type;
-    // add safe mesh in front
-    const safe = BABYLON.MeshBuilder.CreateBox(type+'Safe',{height:1,width:1,depth:1}, scene);
-    // place in front of building
-    const forward = new BABYLON.Vector3(0,0,1);
-    safe.position = nearest.mesh.position.add(forward.scale(nearest.mesh.depth ? nearest.mesh.depth/2 + 2 : 4));
-    const smat = new BABYLON.StandardMaterial(type+'SafeMat', scene); smat.diffuseColor = new BABYLON.Color3(0.53,0.53,0.53);
-    safe.material = smat;
-    nearest.safe = safe;
-    nearest.reward = (type==='convenience')? randRangeInt(8000,30000) : (type==='casino')? randRangeInt(80000,150000) : (type==='bank')? randRangeInt(300000,800000) : 0;
-  }
+  el('vaultCount').textContent = GAME.vaults.length;
 }
 
-function randRangeInt(a,b){ return Math.floor(a + Math.random()*(b-a)); }
-
-/* -------------------------
-   Player & FPS arms rig
-   ------------------------- */
-const player = { onFoot:true, life: life, money: money, yaw:0, pitch:0, pos: new BABYLON.Vector3(0,1.8,0) };
-const fpsRig = new BABYLON.TransformNode('fpsRig', scene);
-fpsRig.position = player.pos.clone();
-
-/* arms (procedural fallback if no model) */
-let armsMesh = null;
-function createArmsFallback(){
-  const left = BABYLON.MeshBuilder.CreateBox('armL',{height:0.3, width:0.18, depth:0.9}, scene);
-  const right = BABYLON.MeshBuilder.CreateBox('armR',{height:0.3, width:0.18, depth:0.9}, scene);
-  left.parent = fpsRig; right.parent = fpsRig;
-  left.position = new BABYLON.Vector3(-0.3, -0.3, 0.6);
-  right.position = new BABYLON.Vector3(0.3, -0.3, 0.6);
-  left.material = new BABYLON.StandardMaterial('armMatL', scene); left.material.diffuseColor = new BABYLON.Color3(0.9,0.78,0.7);
-  right.material = new BABYLON.StandardMaterial('armMatR', scene); right.material.diffuseColor = new BABYLON.Color3(0.9,0.78,0.7);
-  armsMesh = new BABYLON.TransformNode('arms', scene);
-  left.parent = armsMesh; right.parent = armsMesh; armsMesh.parent = fpsRig;
+/* --------------------------
+   Coordinate transforms and drawing helpers
+   We render a pseudo-3D perspective: map is drawn flat, and "3D effect" is achieved by skewing building rectangles
+   and applying a simple depth shading based on z-distance from camera.
+   -------------------------- */
+function worldToScreen(wx, wz){
+  // center the map
+  const ms = GAME.mapSize;
+  const cx = (wx - GAME.player.x) * renderScale() + canvas.width/2 + GAME.view.offsetX;
+  const cy = (wz - GAME.player.z) * renderScale() + canvas.height/2 + GAME.view.offsetY;
+  return { x: cx, y: cy };
+}
+function renderScale(){ // pixels per map unit (zoom)
+  const base = Math.min(canvas.width, canvas.height) / (GAME.mapSize * 0.9);
+  return base * GAME.view.zoom;
 }
 
-/* weapon mount (gun will be parented here) */
-const weaponMount = new BABYLON.TransformNode('weaponMount', scene);
-weaponMount.parent = fpsRig;
-weaponMount.position = new BABYLON.Vector3(0, 0.0, 1.2);
-
-/* -------------------------
-   Vehicles (procedural F1 fallback + external loader)
-   ------------------------- */
-let playerVehicle = null;
-const vehicleState = { onCar:false, vel:0, dir:0, maxSpeed:70, accel:40, brake:80, steer:0, pos:new BABYLON.Vector3(4,0.3,2) };
-
-function createVehicleFallback(){
-  // procedural low poly F1-like
-  const body = BABYLON.MeshBuilder.CreateBox('vehBody',{height:0.5, width:1.6, depth:3.4}, scene);
-  const mat = new BABYLON.StandardMaterial('vehMat', scene); mat.diffuseColor = new BABYLON.Color3(0.85,0.12,0.12);
-  body.material = mat; body.position = vehicleState.pos.clone(); body.receiveShadows = true; body.castShadow = true;
-  // wing
-  const wing = BABYLON.MeshBuilder.CreateBox('vehWing',{height:0.06, width:1.8, depth:0.6}, scene); wing.parent = body; wing.position = new BABYLON.Vector3(0,0.32,-1.2);
-  // wheels
-  const wheels = [];
-  const wheelMat = new BABYLON.StandardMaterial('wheelMat', scene); wheelMat.diffuseColor = new BABYLON.Color3(0.04,0.04,0.04);
-  for(let i=0;i<4;i++){
-    const w = BABYLON.MeshBuilder.CreateCylinder('wheel'+i,{diameter:0.38, height:0.2}, scene);
-    w.material = wheelMat; w.rotation.x = Math.PI/2; w.parent = body;
-    wheels.push(w);
-  }
-  wheels[0].position = new BABYLON.Vector3(-0.75,-0.22,1.05);
-  wheels[1].position = new BABYLON.Vector3(0.75,-0.22,1.05);
-  wheels[2].position = new BABYLON.Vector3(-0.75,-0.22,-1.05);
-  wheels[3].position = new BABYLON.Vector3(0.75,-0.22,-1.05);
-  playerVehicle = body;
-  shadowGen.addShadowCaster(playerVehicle);
+/* shade color helper */
+function shadeColor(hex, percent){
+  // hex as number e.g. 0x112233 ; percent -1..1
+  const r = (hex>>16) & 0xff, g = (hex>>8) & 0xff, b = hex & 0xff;
+  const nr = clamp(Math.round(r*(1+percent)),0,255), ng = clamp(Math.round(g*(1+percent)),0,255), nb = clamp(Math.round(b*(1+percent)),0,255);
+  return `rgb(${nr},${ng},${nb})`;
 }
 
-/* -------------------------
-   Weapon data & spawning
-   ------------------------- */
-const WEAPONS = {
-  pistol: { name:'Pistol', dmg:1, rpm:250, mag:12, auto:false, model:null, glb: ASSETS.models.pistol_glb },
-  smg: { name:'SMG', dmg:1, rpm:720, mag:30, auto:true, model:null, glb: ASSETS.models.smg_glb }
-};
-let currentWeapon = 'pistol';
-let lastShot = 0;
-
-/* spawn bullet entities storage */
-const BULLETS = []; // {pos, vel, life, owner}
-
-/* -------------------------
-   External Model Loader with fallback
-   ------------------------- */
-const SceneLoader = BABYLON.SceneLoader;
-function loadGLB(url, onSuccess, onError){
-  assetsToLoad++;
-  SceneLoader.ImportMesh("", url, "", scene, function(meshes, particleSystems, skeletons, animationGroups){
-    assetsToLoad--; assetsLoaded++; trackAssetLoad();
-    const root = new BABYLON.TransformNode('root_'+Date.now(), scene);
-    meshes.forEach(m => { m.parent = root; });
-    if(onSuccess) onSuccess(root, meshes, skeletons, animationGroups);
-  }, null, function(err){
-    assetsToLoad--; // still count as processed
-    trackAssetLoad();
-    if(onError) onError(err);
-  });
-}
-
-/* Try to load weapons & car model, but fall back if fail */
-function preloadAssets(){
-  assetsToLoad = 0; assetsLoaded = 0;
-  // attempt to load car
-  assetsToLoad++;
-  SceneLoader.ImportMesh("", ASSETS.models.car_glb, "", scene, function(meshes){
-    assetsToLoad--; assetsLoaded++; trackAssetLoad();
-    // put car under a root node
-    const carRoot = new BABYLON.TransformNode('carRoot', scene);
-    meshes.forEach(m => { m.parent = carRoot; });
-    carRoot.position = vehicleState.pos.clone();
-    playerVehicle = carRoot;
-    shadowGen.addShadowCaster(carRoot);
-  }, null, function(err){
-    // fallback
-    assetsToLoad--; trackAssetLoad();
-    createVehicleFallback();
-  });
-
-  // load weapons
-  assetsToLoad++;
-  SceneLoader.ImportMesh("", ASSETS.models.pistol_glb, "", scene, function(meshes){
-    assetsToLoad--; assetsLoaded++; trackAssetLoad();
-    const pistolRoot = new BABYLON.TransformNode('pistolRoot', scene);
-    meshes.forEach(m=> { m.parent = pistolRoot; m.isVisible = false; });
-    WEAPONS.pistol.model = pistolRoot;
-    // parent to weapon mount later
-  }, null, function(err){
-    assetsToLoad--; trackAssetLoad();
-    // no pistol model -> arms procedural will show gun box
-    WEAPONS.pistol.model = null;
-  });
-
-  assetsToLoad++;
-  SceneLoader.ImportMesh("", ASSETS.models.smg_glb, "", scene, function(meshes){
-    assetsToLoad--; assetsLoaded++; trackAssetLoad();
-    const r = new BABYLON.TransformNode('smgRoot', scene);
-    meshes.forEach(m=> m.parent = r);
-    WEAPONS.smg.model = r;
-  }, null, function(err){
-    assetsToLoad--; trackAssetLoad();
-    WEAPONS.smg.model = null;
-  });
-
-  // ensure preloader hides eventually
-  setTimeout(()=>{ if(assetsLoaded < assetsToLoad){ document.getElementById('preloader').style.display='none'; showNotice('読み込みに時間がかかりました — 続行します', 3000); }}, 8000);
-}
-
-/* -------------------------
-   Input (joystick + keyboard + mobile)
-   ------------------------- */
-const input = { throttle:0, steer:0, brake:false, fire:false, action:false, lookX:0, lookY:0 };
-function setupControls(){
-  // joystick simple
-  (function(){
-    const stick = document.getElementById('joystick'); let down=false, center=null;
-    function start(e){ down=true; const p = e.touches?e.touches[0]:e; const rect = stick.getBoundingClientRect(); center = {x:rect.left+rect.width/2, y:rect.top+rect.height/2}; move(e); }
-    function move(e){ if(!down) return; const p = e.touches?e.touches[0]:e; const dx = p.clientX - center.x, dy = p.clientY - center.y; input.throttle = clamp(-dy/60, -1, 1); input.steer = clamp(dx/60, -1, 1); }
-    function end(){ down=false; input.throttle=0; input.steer=0; }
-    stick.addEventListener('touchstart', start); window.addEventListener('touchmove', move); window.addEventListener('touchend', end);
-    stick.addEventListener('mousedown', start); window.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
-  })();
-
-  // keyboard
-  window.addEventListener('keydown', (e)=>{
-    if(e.key==='w'||e.key==='ArrowUp') input.throttle = 1;
-    if(e.key==='s'||e.key==='ArrowDown') input.throttle = -0.4;
-    if(e.key==='a'||e.key==='ArrowLeft') input.steer = -1;
-    if(e.key==='d'||e.key==='ArrowRight') input.steer = 1;
-    if(e.key===' ') input.brake = true;
-    if(e.key==='f') input.action = true;
-    if(e.key==='r') reloadWeapon();
-    if(e.key==='1') equipWeapon('pistol');
-    if(e.key==='2') equipWeapon('smg');
-  });
-  window.addEventListener('keyup',(e)=>{
-    if(['w','ArrowUp','s','ArrowDown'].includes(e.key)) input.throttle=0;
-    if(['a','ArrowLeft','d','ArrowRight'].includes(e.key)) input.steer=0;
-    if(e.key===' ') input.brake=false;
-    if(e.key==='f') input.action=false;
-  });
-
-  // touch UI buttons
-  document.getElementById('btnFire').addEventListener('pointerdown', ()=> input.fire = true);
-  document.getElementById('btnFire').addEventListener('pointerup', ()=> input.fire = false);
-  document.getElementById('btnAction').addEventListener('pointerdown', ()=> input.action = true);
-  document.getElementById('btnAction').addEventListener('pointerup', ()=> input.action = false);
-  document.getElementById('btnEnter').addEventListener('click', toggleEnterCar);
-
-  // mouse look (desktop)
-  let pointerLocked = false;
-  canvas.addEventListener('click', ()=> { if(!pointerLocked){ canvas.requestPointerLock(); } });
-  document.addEventListener('pointerlockchange', ()=>{ pointerLocked = !!document.pointerLockElement; });
-  document.addEventListener('mousemove', (e)=>{
-    if(!pointerLocked) return;
-    const sens = 0.0022;
-    player.yaw -= e.movementX * sens;
-    player.pitch -= e.movementY * sens;
-    player.pitch = clamp(player.pitch, -Math.PI/2 + 0.1, Math.PI/2 - 0.1);
-  });
-}
-
-/* -------------------------
-   Weapon equip / fire / reload
-   ------------------------- */
-function equipWeapon(key){
-  if(!WEAPONS[key]) return;
-  currentWeapon = key;
-  // attach model if exists
-  if(WEAPONS[key].model){
-    WEAPONS[key].model.isVisible = true;
-    WEAPONS[key].model.parent = weaponMount;
-    WEAPONS[key].model.position = BABYLON.Vector3.Zero();
-    WEAPONS[key].model.rotation = BABYLON.Vector3.Zero();
-  } else {
-    // fallback: create a simple gun shape
-    if(weaponMount._gunFallback) weaponMount._gunFallback.dispose();
-    const gunBox = BABYLON.MeshBuilder.CreateBox('gunFallback',{height:0.12,width:0.12,depth:0.6}, scene);
-    gunBox.parent = weaponMount; gunBox.position = new BABYLON.Vector3(0, -0.12, 0.25);
-    const gm = new BABYLON.StandardMaterial('gunMat', scene); gm.diffuseColor = new BABYLON.Color3(0.12,0.12,0.12);
-    gunBox.material = gm; weaponMount._gunFallback = gunBox;
+/* building base colors */
+function kindToColor(k){
+  switch(k){
+    case 'bank': return 0x2ecc71;
+    case 'conbini': return 0x3498db;
+    case 'pachinko': return 0xe67e22;
+    case 'carshop': return 0x9b59b6;
+    case 'slots': return 0xf1c40f;
+    case 'blackmarket': return 0xe84393;
+    default: return 0x95a5a6;
   }
 }
 
-function reloadWeapon(){
-  // simple reload timer (Part2 will add animations)
-  showNotice('リロード...', 900);
+/* draw entire scene once (called each frame by animate) */
+function drawScene(dt){
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // background gradient
+  const g = ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0,'#072033'); g.addColorStop(1,'#04101a');
+  ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // compute scale
+  const s = renderScale();
+
+  // draw ground grid (subtle)
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = '#03181f';
+  ctx.lineWidth = 1;
+  const step = 60 * s;
+  const offsetX = (canvas.width/2 + GAME.view.offsetX) % step;
+  const offsetY = (canvas.height/2 + GAME.view.offsetY) % step;
+  for (let x = -step*3 + offsetX; x < canvas.width+step*3; x += step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+  for (let y = -step*3 + offsetY; y < canvas.height+step*3; y += step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+  ctx.restore();
+
+  // draw buildings (sort by z to simulate depth)
+  const bcopy = GAME.buildings.map((b,idx)=>({...b, idx}));
+  bcopy.sort((a,b)=> (a.z - GAME.player.z) - (b.z - GAME.player.z) ); // back to front
+  bcopy.forEach(b=>{
+    drawBuilding(b, s);
+  });
+
+  // draw player as a simple icon (in middle)
+  drawPlayer();
+
+  // draw HUD overlay elements like labels for nearest building if needed
 }
 
-/* fire weapon */
-function tryFire(){
-  const now = performance.now();
-  const w = WEAPONS[currentWeapon];
-  const msPerShot = 60000 / w.rpm;
-  if(now - lastShot < msPerShot) return;
-  lastShot = now;
-  // muzzle flash
-  spawnMuzzleFlash();
-  // spawn bullet
-  const forward = getPlayerForwardVec();
-  const start = weaponMount.getAbsolutePosition().add(forward.scale(0.6)).add(new BABYLON.Vector3(0, -0.05, 0));
-  BULLETS.push({ pos: start.clone(), vel: forward.scale(2.0), life: 240, owner:'player', dmg: w.dmg });
-  sShot.play && sShot.play();
+/* draw a building with pseudo-3D */
+function drawBuilding(b, s){
+  // center location relative to player
+  const sx = b.sx * s, sz = b.sz * s;
+  const screen = worldToScreen(b.x, b.z);
+  // use tilt to create perspective: roof offset
+  const tilt = GAME.view.tilt; // 0..1
+  const depth = sz * tilt * 0.5;
+  // compute face polygon
+  const left = screen.x - sx/2, right = screen.x + sx/2;
+  const top = screen.y - sz/2 - depth, bottom = screen.y + sz/2;
+  // color and shading by distance
+  const dist = Math.hypot((b.x - GAME.player.x), (b.z - GAME.player.z));
+  const shade = clamp(1 - (dist / (GAME.mapSize*0.8)), 0.3, 1.0);
+  const baseColor = kindToColor(b.kind);
+  ctx.fillStyle = shadeColor(baseColor, (shade - 1) * 0.35);
+  // draw front face rectangle (as building body)
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(right, top);
+  ctx.lineTo(right, bottom);
+  ctx.lineTo(left, bottom);
+  ctx.closePath();
+  ctx.fill();
+  // draw roof (shift upwards a bit)
+  ctx.fillStyle = shadeColor(baseColor, (shade - 1) * 0.55);
+  ctx.beginPath();
+  ctx.moveTo(left, top - depth);
+  ctx.lineTo(right, top - depth);
+  ctx.lineTo(right, top);
+  ctx.lineTo(left, top);
+  ctx.closePath();
+  ctx.fill();
+  // outline
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // small label text
+  ctx.fillStyle = '#eaf1f6';
+  ctx.font = `${Math.max(10, Math.min(14, Math.round(12 * (s*0.6))))}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(b.kind, screen.x, top - 6);
 }
 
-/* -------------------------
-   Muzzle flash + hit effect
-   ------------------------- */
-function spawnMuzzleFlash(){
-  const flash = BABYLON.MeshBuilder.CreateDisc('mflash',{radius:0.18, tessellation: 8}, scene);
-  flash.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-  flash.position = weaponMount.getAbsolutePosition().add(getPlayerForwardVec().scale(0.6));
-  const fm = new BABYLON.StandardMaterial('fm', scene); fm.emissiveColor = new BABYLON.Color3(1,0.85,0.5); flash.material = fm;
-  setTimeout(()=>{ try{ flash.dispose(); }catch(e){} }, 80);
+/* player draw */
+function drawPlayer(){
+  const midX = canvas.width/2 + GAME.view.offsetX;
+  const midY = canvas.height/2 + GAME.view.offsetY;
+  // shadow
+  ctx.beginPath(); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.ellipse(midX, midY+18, 18, 8, 0, 0, Math.PI*2); ctx.fill();
+  // body
+  ctx.beginPath(); ctx.fillStyle = '#ffc857'; ctx.arc(midX, midY, 12, 0, Math.PI*2); ctx.fill();
+  // facing indicator (a triangle)
+  ctx.beginPath(); ctx.fillStyle = '#332211'; ctx.moveTo(midX, midY-14); ctx.lineTo(midX-6, midY-4); ctx.lineTo(midX+6, midY-4); ctx.closePath(); ctx.fill();
 }
 
-/* -------------------------
-   Utility: player forward vector
-   ------------------------- */
-function getPlayerForwardVec(){
-  const yRot = player.yaw;
-  const f = new BABYLON.Vector3(Math.sin(yRot), Math.sin(player.pitch)*0.1, -Math.cos(yRot)).normalize();
-  return f;
+/* --------------------------
+   Minimap rendering
+   -------------------------- */
+function drawMinimap(){
+  const W = mini.width, H = mini.height; mctx.clearRect(0,0,W,H);
+  mctx.fillStyle = '#02111a'; mctx.fillRect(0,0,W,H);
+  const s = W / GAME.mapSize;
+  GAME.buildings.forEach(b=>{
+    const x = Math.round(b.x * s), y = Math.round(b.z * s);
+    const w = clamp(Math.round(b.sx * s), 2, 12), h = clamp(Math.round(b.sz * s), 2, 12);
+    const col = (b.kind==='bank'?'#2ecc71':(b.kind==='conbini'?'#3498db':(b.kind==='pachinko'?'#e67e22':'#95a5a6')));
+    mctx.fillStyle = col; mctx.fillRect(x-w/2,y-h/2,w,h);
+  });
+  // player
+  const px = Math.round(GAME.player.x * (W/GAME.mapSize)), pz = Math.round(GAME.player.z * (H/GAME.mapSize));
+  mctx.beginPath(); mctx.fillStyle = '#ffde59'; mctx.arc(px,pz,6,0,Math.PI*2); mctx.fill();
 }
 
-/* -------------------------
-   Toggle enter/exit car
-   ------------------------- */
-function toggleEnterCar(){
-  if(!playerVehicle) return;
-  const d = BABYLON.Vector3.Distance(playerVehicle.position || vehicleState.pos, fpsRig.position);
-  if(!vehicleState.onCar && d < 3.0){
-    vehicleState.onCar = true; player.onFoot = false;
-    // teleport rig into driver seat
-    fpsRig.position = (playerVehicle.position || vehicleState.pos).add(new BABYLON.Vector3(0,1.2,0));
-    scene.activeCamera = vehicleCam; vehicleCam.lockedTarget = playerVehicle;
-    showNotice('車に乗車',1200);
-  } else if(vehicleState.onCar){
-    vehicleState.onCar = false; player.onFoot = true;
-    fpsRig.position = (playerVehicle.position || vehicleState.pos).add(new BABYLON.Vector3(2,0.8,0));
-    scene.activeCamera = fpsCamera;
+/* --------------------------
+   Controls (virtual stick + mouse drag + keyboard)
+   -------------------------- */
+let stickCenter = null, draggingStick = false;
+const stickEl = el('stickInner'), outerEl = el('joyZone');
+outerEl.addEventListener('pointerdown', e=>{ e.preventDefault(); draggingStick = true; outerEl.setPointerCapture(e.pointerId); const r = outerEl.getBoundingClientRect(); stickCenter = { x:r.left + r.width/2, y:r.top + r.height/2 }; onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointermove', e=>{ if (draggingStick) onStickMove(e.clientX, e.clientY); });
+window.addEventListener('pointerup', e=>{ if (draggingStick) { draggingStick=false; stickInnerReset(); GAME.input.moveX=0; GAME.input.moveY=0; } });
+
+function onStickMove(cx, cy){
+  const dx = cx - stickCenter.x, dy = cy - stickCenter.y;
+  const max = 44;
+  const nx = clamp(dx / max, -1, 1), ny = clamp(dy / max, -1, 1);
+  stickEl.style.transform = `translate(${clamp(dx,-max,max)}px, ${clamp(dy,-max,max)}px)`;
+  // note: moveY positive = down; we invert to typical forward/up usage
+  GAME.input.moveX = nx; GAME.input.moveY = ny;
+}
+function stickInnerReset(){ stickEl.style.transform = 'translate(0,0)'; }
+
+/* mouse drag to rotate view */
+let draggingView = false, lastViewPos = null;
+canvas.addEventListener('pointerdown', (e)=>{
+  if (e.button === 0 && !isOnUI(e)) { draggingView = true; lastViewPos = {x:e.clientX, y:e.clientY}; canvas.setPointerCapture(e.pointerId); }
+});
+canvas.addEventListener('pointermove', (e)=>{ if (draggingView && lastViewPos){ const dx = e.clientX - lastViewPos.x, dy = e.clientY - lastViewPos.y; lastViewPos = {x:e.clientX, y:e.clientY};
+  // rotate angle and tilt
+  GAME.view.angle += dx * 0.002; GAME.view.tilt = clamp(GAME.view.tilt + dy * -0.002, 0.15, 0.9);
+}});
+canvas.addEventListener('pointerup', (e)=>{ draggingView=false; lastViewPos=null; });
+
+function isOnUI(e){
+  // don't treat UI clicks as dragging the scene; check if target is HUD/controls/modal
+  const p = e.target;
+  return p.closest && (p.closest('#hud') || p.closest('#minimap') || p.closest('#vaultModal') || p.closest('.btn') || p.closest('#controlsMobile'));
+}
+
+/* keyboard */
+window.addEventListener('keydown', e=>{
+  if (e.key === 'w' || e.key === 'ArrowUp') GAME.input.moveY = -1;
+  if (e.key === 's' || e.key === 'ArrowDown') GAME.input.moveY = 1;
+  if (e.key === 'a' || e.key === 'ArrowLeft') GAME.input.moveX = -1;
+  if (e.key === 'd' || e.key === 'ArrowRight') GAME.input.moveX = 1;
+  if (e.key === ' ') { GAME.input.firing = true; setTimeout(()=>GAME.input.firing=false,140); }
+});
+window.addEventListener('keyup', e=>{
+  if (['w','s','ArrowUp','ArrowDown'].includes(e.key)) GAME.input.moveY = 0;
+  if (['a','d','ArrowLeft','ArrowRight'].includes(e.key)) GAME.input.moveX = 0;
+});
+
+/* pinch zoom (mobile) */
+let pinchStart = null;
+canvas.addEventListener('touchstart', e=>{
+  if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    pinchStart = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
-}
+});
+canvas.addEventListener('touchmove', e=>{
+  if (e.touches.length === 2 && pinchStart) {
+    const a = e.touches[0], b = e.touches[1];
+    const cur = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const diff = (cur - pinchStart) * 0.002;
+    GAME.view.zoom = clamp(GAME.view.zoom + diff, 0.6, 2.2);
+    pinchStart = cur;
+  }
+});
+canvas.addEventListener('touchend', e=>{ if (e.touches.length < 2) pinchStart = null; });
 
-/* -------------------------
-   Bullets update and collisions
-   ------------------------- */
-function updateBullets(dt){
-  for(let i = BULLETS.length - 1; i >= 0; i--){
-    const b = BULLETS[i];
-    b.pos.addInPlace(b.vel.scale(dt*60));
-    b.life -= dt*60;
-    // check collision with police NPCs (will be in Part2), simplified here: check buildings as dummy targets
-    // if collides with world, spawn hit effect
-    // raycast to check collision
-    const ray = new BABYLON.Ray(b.pos, b.vel.normalize(), 0.3);
-    const pick = scene.pickWithRay(ray);
-    if(pick && pick.hit && pick.pickedMesh){
-      // simple hit effect
-      const p = pick.pickedPoint;
-      const spl = BABYLON.MeshBuilder.CreateSphere('hit', {diameter:0.25}, scene);
-      const hm = new BABYLON.StandardMaterial('hm', scene); hm.diffuseColor = new BABYLON.Color3(1,0.45,0.2);
-      spl.material = hm; spl.position = p;
-      setTimeout(()=>{ try{ spl.dispose(); }catch(e){} }, 900);
-      BULLETS.splice(i,1);
-      sHit.play && sHit.play();
-      continue;
+/* --------------------------
+   Interaction: tryInteractNearby / openVaultIfNearby
+   -------------------------- */
+function tryInteractNearby(){
+  let nearest=null, nd=1e9, idx=-1;
+  GAME.buildings.forEach((b,i)=>{ const d = Math.hypot(b.x - GAME.player.x, b.z - GAME.player.z); if (d < nd){ nd=d; nearest=b; idx=i; } });
+  if (nearest && nd < 36){
+    notify('建物: ' + nearest.kind);
+    if (['bank','conbini','pachinko'].includes(nearest.kind)){
+      // find vault
+      const vault = GAME.vaults.find(v => v.buildingIndex === idx && v.locked);
+      if (vault){ openVaultModal(vault); return; }
+      else notify('この建物の金庫は既に解錠済み'); return;
+    } else {
+      // other building: enter (Part3 will expand)
+      notify('建物に侵入できます（Part3で室内を表示）');
+      return;
     }
-    if(b.life <= 0) BULLETS.splice(i,1);
-  }
+  } else notify('近くに入れる建物がありません');
 }
 
-/* -------------------------
+function openVaultIfNearby(){ tryInteractNearby(); }
+
+/* modal for vault placeholder */
+function openVaultModal(v){
+  const modal = el('vaultModal'); modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+  el('vaultMsg').textContent = `近くの金庫 (報酬: ${fmtMoney(v.reward)}) 。Part2でダイヤルUI実装予定。`; 
+  // record current vault for Part2 when available
+  window._currentVault = v;
+}
+el('closeVault').addEventListener('click', ()=>{ const m = el('vaultModal'); m.classList.remove('open'); m.setAttribute('aria-hidden','true'); });
+
+/* --------------------------
    Main update loop
-   ------------------------- */
-let last = performance.now();
-engine.runRenderLoop(function(){
-  const now = performance.now(); const dt = (now - last) / 1000; last = now;
-
-  // update HUD periodically
-  updateHUD();
-
-  // movement: if in vehicle, simple car model update
-  if(vehicleState.onCar){
-    // basic physics integration for procedural car
-    const throttle = input.throttle; const steer = input.steer;
-    if(throttle > 0) vehicleState.vel += vehicleState.accel * throttle * dt;
-    else vehicleState.vel *= (1 - 0.03);
-    if(input.brake) vehicleState.vel -= vehicleState.brake * dt;
-    vehicleState.vel = clamp(vehicleState.vel, -12, vehicleState.maxSpeed);
-    const speedFactor = Math.max(0.12, 1 - (vehicleState.vel / vehicleState.maxSpeed));
-    const steerAngle = 0.5 * steer * speedFactor;
-    if(Math.abs(steerAngle) > 0.001){
-      const R = 1.8 / Math.tan(steerAngle);
-      const angVel = vehicleState.vel / R;
-      vehicleState.dir += angVel * dt;
-    }
-    const dx = Math.sin(vehicleState.dir) * vehicleState.vel * dt;
-    const dz = -Math.cos(vehicleState.dir) * vehicleState.vel * dt;
-    if(playerVehicle) playerVehicle.position.addInPlace(new BABYLON.Vector3(dx, 0, dz));
-    else vehicleState.pos.addInPlace(new BABYLON.Vector3(dx, 0, dz));
-  } else {
-    // on foot movement: move fpsRig based on input throttle and yaw
-    const walkSpeed = 2.6;
-    const fwd = new BABYLON.Vector3(Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-    const right = new BABYLON.Vector3(Math.cos(player.yaw), 0, Math.sin(player.yaw));
-    fpsRig.position.addInPlace(fwd.scale(input.throttle * walkSpeed * dt)).addInPlace(right.scale(input.steer * walkSpeed * dt));
-    // update camera to rig
-    fpsCamera.position = fpsRig.position.add(new BABYLON.Vector3(0,0.4,0));
-    fpsCamera.rotation = new BABYLON.Vector3(player.pitch, player.yaw, 0);
-    // update weapon mount orientation
-    weaponMount.rotation = new BABYLON.Vector3(0, 0, 0);
-    weaponMount.position = fpsRig.position.add(new BABYLON.Vector3(0, -0.2, 0.6));
-    weaponMount.lookAt(fpsRig.position.add(getPlayerForwardVec().scale(2)));
+   -------------------------- */
+function update(dt){
+  // movement from input (joystick or keyboard)
+  const mx = GAME.input.moveX || 0, my = GAME.input.moveY || 0;
+  if (mx !== 0 || my !== 0){
+    // transform movement by view.angle so forward is camera-up
+    const ang = GAME.view.angle;
+    const vx = mx * Math.cos(ang) - my * Math.sin(ang);
+    const vz = mx * Math.sin(ang) + my * Math.cos(ang);
+    GAME.player.x += vx * GAME.player.speed * 18 * dt;
+    GAME.player.z += vz * GAME.player.speed * 18 * dt;
+    GAME.player.x = clamp(GAME.player.x, 0, GAME.mapSize);
+    GAME.player.z = clamp(GAME.player.z, 0, GAME.mapSize);
   }
 
-  // handle firing input
-  if(input.fire){
-    tryFire();
-  }
+  // friction on offsets (camera smoothing)
+  GAME.view.offsetX *= 0.92; GAME.view.offsetY *= 0.92;
 
-  // update bullets
-  updateBullets(dt);
+  // update HUD
+  el('money').textContent = fmtMoney(GAME.player.money);
+  el('guns').textContent = GAME.player.guns;
+  el('cars').textContent = GAME.player.cars;
+  el('heat').textContent = Math.round(GAME.heat||0);
 
-  // simple gravity for weaponMount (keep at player's chest)
-  // show preloader until assets loaded
-  scene.render();
-});
+  // redraw scene
+  drawScene(dt);
+  drawMinimap();
 
-/* -------------------------
-   Initialize everything
-   ------------------------- */
+  // Part2/Part3 hooks if available (non-blocking)
+  try { if (window._part2_update) window._part2_update(dt); if (window._part3_update) window._part3_update(dt); } catch(e){ /* ignore */ }
+}
+
+/* animation loop */
+function loop(t){
+  const last = GAME.lastFrame || t; const dt = Math.min(0.05, (t - last)/1000); GAME.lastFrame = t;
+  update(dt);
+  requestAnimationFrame(loop);
+}
+
+/* draw once (for immediate resize) */
+function drawOnce(){ drawScene(0); drawMinimap(); }
+
+/* --------------------------
+   UI wiring
+   -------------------------- */
+el('btnNewMap').addEventListener('click', ()=>{ generateMap(); drawOnce(); notify('マップを再生成しました'); });
+el('btnSave').addEventListener('click', ()=>{ try{ const s = { player: GAME.player, buildings: GAME.buildings, vaults: GAME.vaults }; localStorage.setItem('vh_save_part1', JSON.stringify(s)); notify('保存しました'); } catch(e){ notify('保存に失敗しました'); } });
+el('btnInteract').addEventListener('click', ()=> tryInteractNearby());
+el('btnVault').addEventListener('click', ()=> openVaultIfNearby());
+el('btnFire').addEventListener('click', ()=> { notify('発砲（HUD） — Part3で弾可視化を実装'); });
+el('viewMode').addEventListener('change', (e)=>{ GAME.view.mode = e.target.value; notify('表示モード: ' + e.target.value); });
+
+/* --------------------------
+   Init
+   -------------------------- */
 function init(){
-  document.getElementById('preloader').style.display = 'flex';
-  createCity();
-  preloadAssets();
-  createArmsFallback();
-  equipWeapon('pistol');
-  createVehicleFallback(); // create fallback immediately; real model may replace later
-  setupControls();
-  // place player near center
-  fpsRig.position = new BABYLON.Vector3(0, 1.8, -4);
-  // place camera
-  fpsCamera.position = fpsRig.position.clone();
-  scene.activeCamera = fpsCamera;
-  showNotice('初期化完了。街を探索して金庫を探そう。Part2で金庫ミニゲームと警察AI強化を実装します。', 5000);
+  fitCanvas();
+  generateMap();
+  drawOnce();
+  requestAnimationFrame(loop);
+  notify('Part1 (オフライン版) が起動しました');
 }
-
-/* -------------------------
-   UI Interactions
-   ------------------------- */
-document.getElementById('shopBtn').addEventListener('click', ()=> document.getElementById('shopModal').classList.remove('hidden'));
-document.getElementById('shopClose').addEventListener('click', ()=> document.getElementById('shopModal').classList.add('hidden'));
-document.querySelectorAll('.buy').forEach(b=>{
-  b.addEventListener('click',(e)=>{
-    const cost = Number(e.target.dataset.cost); const gun = e.target.dataset.gun;
-    if(money < cost){ alert('お金が足りません'); return; }
-    money -= cost; saveAll(); updateHUD();
-    // unlock gun in inventory
-    if(gun && WEAPONS[gun]) showNotice(WEAPONS[gun].name + ' を購入しました', 1400), WEAPONS[gun].owned = true;
-  });
-});
-
-/* -------------------------
-   Helpers & start
-   ------------------------- */
-function equipPistolOnMount(){
-  if(WEAPONS.pistol.model) WEAPONS.pistol.model.parent = weaponMount;
-}
-function randPosInCity(){ return new BABYLON.Vector3(randRange(-CITY.size/2, CITY.size/2), 0, randRange(-CITY.size/2, CITY.size/2)); }
-
-window.addEventListener('resize', ()=> engine.resize());
-window.addEventListener('beforeunload', ()=> saveAll());
-
 init();
+
+/* expose APIs for later parts */
+window.generateMap = generateMap;
+window.openVaultModal = openVaultModal;
+window.tryInteractNearby = tryInteractNearby;
+window.openVaultIfNearby = openVaultIfNearby;
 
 </script>
 </body>
 </html>
-<!-- Part2: paste the following inside a <script> after Part1 script (do NOT duplicate <html>/<body> tags) -->
-<script>
-/* ============================
-   Vault Heist — Part2 (Remake)
-   - Advanced visuals (HDR/skybox + optional bloom)
-   - Safe minigame (multi-step)
-   - Police AI (group + vehicles + shooting)
-   - Shops integrated into city buildings
-   - Weapon equip/upgrade, buy gun models, change stats
-   - Performance toggles, LOD, debug UI
-   ============================ */
-
-/* ---------- safety & pointerLock fix ---------- */
-const realCanvas = (engine && engine.getRenderingCanvas) ? engine.getRenderingCanvas() : document.getElementById('renderCanvas');
-function tryPointerLock(){
-  try{
-    if(realCanvas && realCanvas.requestPointerLock) realCanvas.requestPointerLock();
-  }catch(e){
-    console.warn('pointerLock unavailable in this environment:', e);
-  }
-}
-
-/* ---------- Visuals: Skybox + HDR-ish environment (fallbacks) ---------- */
-(function setupEnvironment(){
-  // try to load an HDR / Skybox. If unavailable, use procedural gradient skybox
-  const hdrUrl = null; // put HDR url if available
-  if(hdrUrl){
-    // advanced: use HDR loader (requires proper environment)
-    // Example: BABYLON.CubeTexture.CreateFromPrefilteredData(hdrUrl, scene)
-    try{
-      const envTex = BABYLON.CubeTexture.CreateFromPrefilteredData(hdrUrl, scene);
-      scene.environmentTexture = envTex;
-      scene.environmentIntensity = 0.8;
-    }catch(e){ console.warn('HDR load failed', e); }
-  } else {
-    // fallback: procedural skybox
-    const skybox = BABYLON.MeshBuilder.CreateBox("skyBox", {size:2000.0}, scene);
-    const skyMat = new BABYLON.StandardMaterial("skyMat", scene);
-    skyMat.backFaceCulling = false;
-    skyMat.disableLighting = true;
-    skyMat.diffuseColor = new BABYLON.Color3(0,0,0);
-    // simple gradient texture via dynamic texture
-    const dt = new BABYLON.DynamicTexture("skyDT", {width:512, height:256}, scene);
-    const ctx = dt.getContext();
-    const g = ctx.createLinearGradient(0,0,0,256);
-    g.addColorStop(0,"#081427"); g.addColorStop(0.6,"#16314a"); g.addColorStop(1,"#6a9bb8");
-    ctx.fillStyle = g; ctx.fillRect(0,0,512,256); dt.update();
-    skyMat.diffuseTexture = dt; skybox.material = skyMat;
-    skybox.infiniteDistance = true;
-  }
-
-  // lightweight bloom/postprocess toggle
-  scene._postProcessManager = scene._postProcessManager || {};
-  scene._postProcessManager.bloom = null;
-  function enableBloom(enable){
-    if(enable && !scene._postProcessManager.bloom){
-      const pipeline = new BABYLON.DefaultRenderingPipeline('defaultPipeline', true, scene, [scene.activeCamera]);
-      pipeline.bloomEnabled = true; pipeline.bloomThreshold = 0.6; pipeline.bloomWeight = 0.4; pipeline.bloomKernel = 32;
-      scene._postProcessManager.bloom = pipeline;
-    } else if(!enable && scene._postProcessManager.bloom){
-      try{ scene._postProcessManager.bloom.dispose(); }catch(e){} scene._postProcessManager.bloom = null;
-    }
-  }
-  // default enable (mid poly)
-  try{ enableBloom(true); }catch(e){ console.warn('bloom init failed', e); }
-})();
-
-/* ---------- LOD / performance utilities ---------- */
-const Perf = {
-  shadows: true,
-  bloom: true,
-  detailDistance: 180,
-  setQuality(mode){
-    if(mode === 'high'){ this.shadows = true; this.bloom = true; this.detailDistance = 300; }
-    else if(mode === 'mid'){ this.shadows = true; this.bloom = true; this.detailDistance = 180; }
-    else { this.shadows = false; this.bloom = false; this.detailDistance = 90; }
-    // apply
-    if(!Perf.shadows) shadowGen.getShadowMap() && shadowGen.setDarkness(0.85);
-    if(scene._postProcessManager && scene._postProcessManager.bloom) {
-      if(!Perf.bloom) scene._postProcessManager.bloom.bloomEnabled = false;
-      else scene._postProcessManager.bloom.bloomEnabled = true;
-    }
-  }
-};
-Perf.setQuality('mid');
-
-/* ---------- Shop-building binding: find buildings of types and expose shops ---------- */
-const ShopBuildings = []; // {building, type, uiShown}
-function bindShopsToBuildings(){
-  for(const b of BUILDINGS){
-    if(!b.type) continue;
-    if(['convenience','casino','gunshop','carshop','bank'].includes(b.type)){
-      ShopBuildings.push({ building: b, type: b.type, uiShown:false });
-      // mark visually
-      const tag = makeFloatingLabel((b.type || 'shop').toUpperCase(), b.mesh.position.add(new BABYLON.Vector3(0, b.mesh.scaling ? (b.mesh.scaling.y*0.5) : (b.mesh.scaling||4), 0)));
-      tag.parent = b.mesh;
-    }
-  }
-}
-function makeFloatingLabel(txt, posVec){
-  const plane = BABYLON.MeshBuilder.CreatePlane('lbl_'+txt, {width:3, height:0.7}, scene);
-  const dt = new BABYLON.DynamicTexture('lblDT_'+txt, {width:512,height:128}, scene);
-  dt.drawText(txt, null, 60, "bold 28px Arial", "#ffd166", "transparent");
-  const mat = new BABYLON.StandardMaterial('lblMat_'+txt, scene); mat.diffuseTexture = dt; mat.emissiveColor = new BABYLON.Color3(1,0.85,0.4);
-  plane.material = mat; plane.position = posVec; plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-  return plane;
-}
-bindShopsToBuildings();
-
-/* ---------- Shop UI overlay (in-world press 'F' to open) ---------- */
-function openShopForBuilding(shop){
-  // shop: {building,type}
-  const type = shop.type;
-  // reuse modal (Part1) but populate based on type
-  const modal = document.getElementById('shopModal');
-  modal.classList.remove('hidden');
-  modal.querySelector('h2').innerText = 'SHOP - ' + type.toUpperCase();
-  // clear contents and add items
-  const area = modal.querySelector('div');
-  area.innerHTML = '';
-  const items = [];
-  if(type === 'convenience'){ items.push({name:'スロット', cost:5000, id:'slot'}); items.push({name:'小額現金', cost:3000, id:'cash'}); }
-  if(type === 'casino'){ items.push({name:'ジャックポットチケット', cost:15000, id:'jack'}); items.push({name:'高額スロット', cost:40000, id:'slotbig'}); }
-  if(type === 'gunshop'){ items.push({name:'ハンドガン', cost:10000, id:'gun_pistol'}); items.push({name:'SMG', cost:28000, id:'gun_smg'}); items.push({name:'ショットガン', cost:32000, id:'gun_shotgun'}); }
-  if(type === 'carshop'){ items.push({name:'スポーツカー', cost:120000, id:'car_sport'}); items.push({name:'SUV', cost:48000, id:'car_suv'}); }
-  if(type === 'bank'){ items.push({name:'金庫攻略ツール', cost:80000, id:'tool_gold'}); }
-
-  for(const it of items){
-    const itemDiv = document.createElement('div'); itemDiv.style.cssText='flex:1 0 45%; background:rgba(255,255,255,0.02); padding:8px; border-radius:8px; margin:6px;';
-    itemDiv.innerHTML = `<div>${it.name} - ${it.cost.toLocaleString()}円</div><div><button class="act buyItem" data-id="${it.id}" data-cost="${it.cost}">購入</button></div>`;
-    area.appendChild(itemDiv);
-  }
-  // close button
-  const closeDiv = document.createElement('div'); closeDiv.style.cssText='width:100%; text-align:right;';
-  closeDiv.innerHTML = `<button class="act" id="shopCloseLocal">閉じる</button>`;
-  area.appendChild(closeDiv);
-
-  // attach handlers
-  area.querySelectorAll('.buyItem').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      const cost = Number(e.target.dataset.cost); const id = e.target.dataset.id;
-      if(money < cost){ alert('お金が足りません'); return; }
-      money -= cost; saveAll(); updateHUD();
-      // apply effects
-      if(id.startsWith('gun_')){
-        const gunKey = id.split('_')[1];
-        if(WEAPONS[gunKey]) WEAPONS[gunKey].owned = true, showNotice(WEAPONS[gunKey].name + 'を購入しました', 1600);
-      } else if(id === 'car_sport' || id === 'car_suv'){
-        showNotice('車を購入しました！ 車はガレージに配達されます', 1800);
-        // spawn a new vehicle near player
-        spawnOwnedVehicle(id);
-      } else if(id === 'tool_gold'){ showNotice('金庫攻略ツールを入手！',1500); }
-      // persist
-      saveAll();
-    });
-  });
-
-  document.getElementById('shopCloseLocal').addEventListener('click', ()=> modal.classList.add('hidden'));
-}
-
-/* ---------- Owned vehicle spawn ---------- */
-const OwnedVehicles = [];
-function spawnOwnedVehicle(id){
-  // spawn simple vehicle near player's position
-  const pos = fpsRig.position.add(new BABYLON.Vector3(2,0,0));
-  const root = BABYLON.MeshBuilder.CreateBox('ownedCar',{height:0.6,width:1.8,depth:3.2}, scene);
-  root.position = pos.clone();
-  const m = new BABYLON.StandardMaterial('ownCarMat', scene); m.diffuseColor = new BABYLON.Color3(Math.random()*0.8+0.2, Math.random()*0.8+0.2, Math.random()*0.8+0.2);
-  root.material = m; root.receiveShadows=true; shadowGen.addShadowCaster(root);
-  OwnedVehicles.push({ mesh: root, id });
-}
-
-/* ---------- Gold safe minigame (multi-step) ---------- */
-/* Design:
-   - Step 1: Dial rotation puzzle (rotate knob to match a hidden target angle; small wiggle allowed)
-   - Step 2: Waveform timing (press when waveform crosses threshold)
-   - Step 3: Quick input sequence (random simple arrow keys / touch taps)
-   - Failure -> alarm increase, chance to spawn police immediately
-   - Success -> reward scaled by building.reward and time efficiency
-*/
-
-function startGoldMinigame(building){
-  if(building.opened) { showNotice('この金庫は既に開かれています',1400); return; }
-  // pause player movement
-  input.throttle = 0; input.steer = 0;
-  showNotice('金庫ミニゲーム開始 — 成功で大金獲得！', 1800);
-  runMinigameSequence(building);
-}
-
-function runMinigameSequence(building){
-  // overlay UI
-  const overlay = document.createElement('div'); overlay.style.cssText='position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:300; background:rgba(0,0,0,0.9); padding:14px; border-radius:12px; color:#fff; width:min(520px,94%); text-align:center;';
-  overlay.id = 'mgOverlay';
-  document.body.appendChild(overlay);
-
-  // Step 1: Dial
-  let successStage1 = false;
-  let dialTarget = randRange(0, Math.PI*2);
-  let dialValue = 0;
-  overlay.innerHTML = `<h3>Step 1: ダイヤル合わせ</h3><p>ノブを回して目標角度に合わせよう</p><div id="dialCanvas" style="width:420px;height:160px; margin:8px auto; background:#09121a; border-radius:8px;"></div><div style="margin-top:8px;"><button id="dialNext" class="act">決定</button></div>`;
-  const dc = document.getElementById('dialCanvas');
-  // canvas drawing
-  const dcan = document.createElement('canvas'); dcan.width = 420; dcan.height = 160; dc.appendChild(dcan);
-  const dctx = dcan.getContext('2d');
-  function drawDial(){
-    dctx.clearRect(0,0,dcan.width,dcan.height);
-    dctx.fillStyle = '#05101a'; dctx.fillRect(0,0,dcan.width,dcan.height);
-    // draw knob
-    const cx = 210, cy = 80;
-    dctx.save(); dctx.translate(cx,cy);
-    dctx.rotate(dialValue);
-    dctx.fillStyle = '#9fb'; dctx.beginPath(); dctx.arc(0,0,36,0,Math.PI*2); dctx.fill();
-    dctx.fillStyle='#034'; dctx.fillRect(0,-6,46,12);
-    dctx.restore();
-    // draw indicator for target (not shown to player) - hidden for fairness (optional: show faint hint)
-    // progress
-    dctx.fillStyle='#fff'; dctx.font='14px Arial'; dctx.fillText('角度: ' + Math.round((dialValue/(Math.PI*2))*360) + '°', 12, 18);
-  }
-  drawDial();
-  // rotate knob via mouse drag/touch
-  let dragging=false;
-  dcan.addEventListener('pointerdown', (e)=>{ dragging=true; });
-  window.addEventListener('pointerup', ()=> dragging=false);
-  window.addEventListener('pointermove', (e)=>{ if(!dragging) return; const rect = dcan.getBoundingClientRect(); const x = e.clientX - rect.left - 210; const y = e.clientY - rect.top - 80; dialValue = Math.atan2(y,x); drawDial(); });
-
-  document.getElementById('dialNext').addEventListener('click', ()=>{
-    // check closeness
-    let delta = Math.abs(normAngle(dialValue - dialTarget));
-    if(delta < 0.32){ successStage1 = true; showNotice('ダイヤル成功！', 1200); nextStage(); }
-    else { showNotice('ダイヤル失敗！ 警報が上がる', 1600); alarmLevel += 10; document.getElementById('alarm').innerText = Math.round(alarmLevel); cleanupMinigame(); if(alarmLevel > 25) maybeSummonPoliceImmediate(); }
-  });
-
-  function nextStage(){
-    // replace content with waveform timing
-    overlay.innerHTML = `<h3>Step 2: 波形タイミング</h3><p>波が閾値を越えた瞬間にボタンを押せ！</p><div id="waveCanvas" style="width:480px;height:160px; margin:8px auto; background:#09121a; border-radius:8px;"></div><div style="margin-top:8px;"><button id="waveBtn" class="act">押す</button></div>`;
-    const wc = document.getElementById('waveCanvas');
-    const wcan = document.createElement('canvas'); wcan.width = 480; wcan.height = 160; wc.appendChild(wcan);
-    const wctx = wcan.getContext('2d');
-    let t = 0;
-    let targetWindow = {start: 1.2 + Math.random()*1.0, end: 1.6 + Math.random()*1.0}; // seconds window
-    let pressed = false;
-    function drawWave(){
-      wctx.clearRect(0,0,wcan.width,wcan.height);
-      wctx.fillStyle = '#05101a'; wctx.fillRect(0,0,wcan.width,wcan.height);
-      // draw sine progress over width representing t from 0..2.6s
-      const duration = 2.6;
-      const samples = 200;
-      wctx.beginPath(); for(let i=0;i<=samples;i++){
-        const tt = i/samples * duration;
-        const x = i/samples * wcan.width;
-        const y = wcan.height/2 - Math.sin(tt*4 + t*2)*40;
-        if(i===0) wctx.moveTo(x,y); else wctx.lineTo(x,y);
-      }
-      wctx.strokeStyle='#89c'; wctx.lineWidth = 2; wctx.stroke();
-      // draw threshold window
-      const sx = (targetWindow.start/duration) * wcan.width;
-      const ex = (targetWindow.end/duration) * wcan.width;
-      wctx.fillStyle = 'rgba(255,200,60,0.08)'; wctx.fillRect(sx,0,ex-sx,wcan.height);
-      // time cursor
-      const cursorX = (t/duration) * wcan.width; wctx.fillStyle='#ffd166'; wctx.fillRect(cursorX-2,0,4,wcan.height);
-      t += 0.016;
-      if(t > duration) t = 0;
-      if(!pressed) requestAnimationFrame(drawWave);
-    }
-    drawWave();
-    document.getElementById('waveBtn').addEventListener('click', ()=>{
-      pressed = true;
-      // check t
-      const cursorTime = (t % 2.6);
-      if(cursorTime >= targetWindow.start && cursorTime <= targetWindow.end){ showNotice('波形成功!', 1000); thirdStage(); }
-      else { showNotice('タイミングミス！ 警報上昇', 1400); alarmLevel += 12; document.getElementById('alarm').innerText = Math.round(alarmLevel); cleanupMinigame(); if(alarmLevel > 20) maybeSummonPoliceImmediate(); }
-    });
-  }
-
-  function thirdStage(){
-    overlay.innerHTML = `<h3>Step 3: シーケンス入力</h3><p>表示されたキーを素早く入力しよう</p><div id="seq" style="margin-top:12px;"></div><div style="margin-top:8px;"><div id="seqInput"></div></div>`;
-    const seqDiv = document.getElementById('seq');
-    const seqLen = 4 + Math.floor(Math.random()*3);
-    const chars = ['←','→','↑','↓'];
-    const seq = [];
-    for(let i=0;i<seqLen;i++) seq.push(chars[Math.floor(Math.random()*chars.length)]);
-    seqDiv.innerText = seq.join('  ');
-    // input capture
-    let idx = 0;
-    function onKey(k){
-      if(k===seq[idx]){ idx++; if(idx >= seqLen){ // success
-          showNotice('金庫解錠成功！', 1800);
-          // reward
-          const base = building.reward || randRangeInt(8000,80000);
-          const bonus = Math.floor( (20 - alarmLevel) * 0.25 * base );
-          const reward = Math.max(1000, base + bonus);
-          building.opened = true;
-          money += reward; saveAll(); updateHUD();
-          // visual: flash + particle
-          spawnSuccessBurst(building.safe ? building.safe.position : building.mesh.position);
-          cleanupMinigame();
-        } }
-      else { showNotice('入力失敗！ 警報増加',1400); alarmLevel += 18; document.getElementById('alarm').innerText = Math.round(alarmLevel); cleanupMinigame(); if(alarmLevel > 20) maybeSummonPoliceImmediate(); }
-    }
-    // keyboard and touch mapping
-    const keyMap = {'ArrowLeft':'←','ArrowRight':'→','ArrowUp':'↑','ArrowDown':'↓'};
-    function onKeyDown(e){
-      const mapped = keyMap[e.key] || e.key;
-      onKey(mapped);
-    }
-    document.addEventListener('keydown', onKeyDown);
-    // small touch buttons overlay
-    const seqInput = document.getElementById('seqInput');
-    seqInput.innerHTML = '';
-    chars.forEach(ch=>{
-      const b = document.createElement('button'); b.className='act'; b.style.margin='4px'; b.innerText = ch;
-      b.addEventListener('click', ()=> onKey(ch));
-      seqInput.appendChild(b);
-    });
-    // safety: timeout
-    setTimeout(()=>{ if(idx < seqLen){ showNotice('時間切れ！',1200); alarmLevel += 20; document.getElementById('alarm').innerText = Math.round(alarmLevel); cleanupMinigame(); if(alarmLevel > 18) maybeSummonPoliceImmediate(); } }, 1000 * (seqLen + 5));
-  }
-
-  function cleanupMinigame(){
-    try{ const o = document.getElementById('mgOverlay'); if(o) o.remove(); }catch(e){}
-    // unpause if needed
-  }
-
-  function spawnSuccessBurst(pos){
-    // small bright sphere + glow then dispose
-    const s = BABYLON.MeshBuilder.CreateSphere('rewardBurst',{diameter:1.4}, scene);
-    s.position = pos.add(new BABYLON.Vector3(0,1,0));
-    const mat = new BABYLON.StandardMaterial('rbm', scene); mat.emissiveColor = new BABYLON.Color3(1,0.9,0.2); s.material = mat;
-    setTimeout(()=>{ try{ s.dispose(); }catch(e){} }, 1400);
-  }
-
-  function normAngle(a){
-    // normalize to -PI..PI
-    while(a > Math.PI) a -= Math.PI*2;
-    while(a < -Math.PI) a += Math.PI*2;
-    return a;
-  }
-}
-
-/* ---------- Immediate police summon chance (minigame failure) ---------- */
-function maybeSummonPoliceImmediate(){
-  if(policeActive) return;
-  // raise alarm and summon 1-3 police
-  const count = 1 + Math.floor(Math.random()*2);
-  for(let i=0;i<count;i++) summonPolice();
-}
-
-/* ---------- Police AI (enhanced) ---------- */
-/* data structures:
-   policeNPCs = [{pos, mesh, hp, state, speed, target, cooldown, inVehicle, vehicleMesh}]
-*/
-const policeNPCs = [];
-function summonPolice(atPos){
-  // atPos optional - spawn near player or given pos
-  const spawnBase = atPos ? atPos.clone() : fpsRig.position;
-  for(let i=0;i<1 + Math.floor(Math.random()*2); i++){
-    const spawnPos = spawnBase.add(new BABYLON.Vector3(randRange(-12,12), 0, randRange(-12,12)));
-    const npc = { pos: spawnPos.clone(), hp: 4, state: 'chase', speed: 0.045 + Math.random()*0.02, cooldown: 0, mesh: null, inVehicle:false, vehicleMesh:null };
-    npc.mesh = BABYLON.MeshBuilder.CreateBox('polNPC',{height:1.6,width:1.2,depth:1.6}, scene);
-    npc.mesh.material = new BABYLON.StandardMaterial('polMat', scene); npc.mesh.material.diffuseColor = new BABYLON.Color3(0.05,0.2,0.9);
-    npc.mesh.position = spawnPos.clone();
-    shadowGen.addShadowCaster(npc.mesh);
-    policeNPCs.push(npc);
-    policeActive = true;
-  }
-  // play siren
-  try{ sAlert.play && sAlert.play(); }catch(e){}
-}
-
-/* police update loop (called each frame) */
-function updatePolice(dt){
-  if(policeNPCs.length === 0) { policeActive = false; if(sAlert.stop) sAlert.stop(); return; }
-  for(let i = policeNPCs.length - 1; i >= 0; i--){
-    const npc = policeNPCs[i];
-    // state machine: chase -> flank -> cover -> search
-    if(!npc.mesh) continue;
-    const toPlayer = fpsRig.position.subtract(npc.mesh.position);
-    const dist = toPlayer.length();
-    // if far, approach faster
-    const dir = toPlayer.normalize();
-    if(dist > 1.6){
-      npc.mesh.position.addInPlace(dir.scale(npc.speed * (vehicleState.onCar?0.7:1) * (1 + (i%2)*0.12)));
-    }
-    // shoot if line of sight and cooldown ready
-    npc.cooldown -= dt;
-    if(npc.cooldown <= 0 && dist < 18){
-      npc.cooldown = 1.0 + Math.random()*0.6;
-      // line of sight check
-      const ray = new BABYLON.Ray(npc.mesh.position.add(new BABYLON.Vector3(0,0.8,0)), fpsRig.position.subtract(npc.mesh.position).normalize(), 200);
-      const pick = scene.pickWithRay(ray, (m) => m && m !== npc.mesh && m !== fpsRig);
-      // if path clear-ish, fire
-      if(true){
-        // spawn bullet toward player (simple)
-        const start = npc.mesh.position.add(new BABYLON.Vector3(0,0.9,0));
-        const aim = fpsRig.position.add(new BABYLON.Vector3(0,0.6,0)).add(new BABYLON.Vector3(randRange(-0.4,0.4), randRange(-0.12,0.12), randRange(-0.4,0.4)));
-        const vel = aim.subtract(start).normalize().scale(1.3);
-        BULLETS.push({pos: start.clone(), vel, life: 220, owner: 'police', dmg:1});
-        // gun flash
-        const flash = BABYLON.MeshBuilder.CreateDisc('pmf',{radius:0.12, tessellation:8}, scene);
-        flash.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL; flash.position = start.add(vel.normalize().scale(0.6));
-        const fm = new BABYLON.StandardMaterial('pmfm', scene); fm.emissiveColor = new BABYLON.Color3(1,0.6,0.3); flash.material = fm;
-        setTimeout(()=>{ try{ flash.dispose(); }catch(e){} }, 120);
-      }
-    }
-    // if NPC near player -> melee arrest (instant fail)
-    if(BABYLON.Vector3.Distance(npc.mesh.position, fpsRig.position) < 1.4){
-      showNotice('警察に捕まりました。リロードして再開してください。', 4000);
-      setTimeout(()=> location.reload(), 1800);
-    }
-    // if hp <= 0 -> drop weapon + remove
-    if(npc.hp <= 0){
-      try{ if(npc.mesh) npc.mesh.dispose(); }catch(e){}
-      policeNPCs.splice(i,1);
-      // reward small
-      const drop = randRangeInt(4000,18000);
-      money += drop; updateHUD(); saveAll();
-      spawnSuccessBurst(fpsRig.position);
-    }
-  }
-}
-
-/* ---------- BULLETS interaction extended (player & police bullets) ---------- */
-/* Extend updateBullets in Part1 - we override by re-defining with extra checks */
-function updateBulletsEnhanced(dt){
-  for(let i = BULLETS.length - 1; i >= 0; i--){
-    const b = BULLETS[i];
-    b.pos.addInPlace(b.vel.scale(dt*60));
-    b.life -= dt*60;
-    // check hit vs police NPCs
-    if(b.owner === 'player'){
-      for(let j = policeNPCs.length - 1; j >= 0; j--){
-        const npc = policeNPCs[j];
-        if(npc.mesh && BABYLON.Vector3.Distance(b.pos, npc.mesh.position) < 1.0){
-          npc.hp -= b.dmg || 1;
-          try{ const p = BABYLON.MeshBuilder.CreateSphere('hit', {diameter:0.18}, scene); p.position = b.pos.clone(); p.material = new BABYLON.StandardMaterial('hm', scene); p.material.diffuseColor = new BABYLON.Color3(1,0.35,0.1); setTimeout(()=>p.dispose(),800); }catch(e){}
-          BULLETS.splice(i,1); break;
-        }
-      }
-    } else if(b.owner === 'police'){
-      // check hit player
-      if(BABYLON.Vector3.Distance(b.pos, fpsRig.position) < 1.0){
-        // damage player
-        life -= 1; updateHUD(); showNotice('被弾！', 1200);
-        BULLETS.splice(i,1);
-        if(life <= 0){ showNotice('あなたは死亡しました。リロードしてください', 4000); setTimeout(()=>location.reload(),1500); }
-        continue;
-      }
-    }
-    // collision with world -> produce spark and remove
-    const ray = new BABYLON.Ray(b.pos, b.vel.normalize(), 0.4);
-    const pick = scene.pickWithRay(ray, (m) => m && m._isBulletMesh !== true);
-    if(pick && pick.hit && pick.pickedMesh){
-      // small spark
-      const spl = BABYLON.MeshBuilder.CreateSphere('s', {diameter:0.12}, scene);
-      spl.position = pick.pickedPoint.clone();
-      const sm = new BABYLON.StandardMaterial('smat', scene); sm.emissiveColor = new BABYLON.Color3(1,0.6,0.2); spl.material = sm;
-      setTimeout(()=>{ try{ spl.dispose(); }catch(e){} }, 800);
-      BULLETS.splice(i,1);
-      continue;
-    }
-    if(b.life <= 0) BULLETS.splice(i,1);
-  }
-}
-
-/* ---------- Hook enhanced bullets into main loop ----------
-   We'll add a wrapper so Part1's update uses this enhanced function.
-*/
-(function hookEnhancedBullets(){
-  // replace the updateBullets function from Part1 if exists
-  window.updateBullets = updateBulletsEnhanced;
-})();
-
-/* ---------- Missions & Police spawn logic ----------
-   Increase police spawn probability when alarmLevel surpasses thresholds
-*/
-function policeAlarmLogic(dt){
-  // passive alarm decay
-  alarmLevel = Math.max(0, alarmLevel - dt*0.5);
-  document.getElementById('alarm').innerText = Math.round(alarmLevel);
-  // thresholds
-  if(alarmLevel > 35 && !policeActive){
-    summonPolice(); // heavy response
-  } else if(alarmLevel > 18 && Math.random() < 0.0015){
-    summonPolice();
-  }
-}
-
-/* ---------- integrate shop open on proximity ----------
-   Press 'F' near building to open its shop UI
-*/
-window.addEventListener('keydown', (e)=>{
-  if(e.key.toLowerCase() === 'f'){
-    // find nearest shop building within 3.0m
-    let nearest = null; let nd=1e9;
-    for(const sb of ShopBuildings){
-      const bp = sb.building.mesh.position;
-      const d = BABYLON.Vector3.Distance(bp, fpsRig.position);
-      if(d < nd){ nd = d; nearest = sb; }
-    }
-    if(nearest && nd < 4.0){
-      openShopForBuilding(nearest);
-    }
-  }
-});
-
-/* ---------- Weapon model swap on purchase / equip ----------
-   When WEAPONS.<key>.owned true, the player can equip and the visual model will update
-*/
-function updateWeaponModels(){
-  for(const key in WEAPONS){
-    const w = WEAPONS[key];
-    if(w.owned && w.model){
-      // ensure model is visible in shop/arm when equipped - handled in Part1 equipWeapon
-    }
-  }
-}
-
-/* ---------- slot machine mini enhancements (in shop) ----------
-   when user buys slot item, show an animated slot UI instead of immediate rand
-*/
-function playSlotUI(cost, payoutMultiplier=3.4, big=false){
-  const overlay = document.createElement('div'); overlay.style.cssText='position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:400; background:rgba(0,0,0,0.95); padding:14px; border-radius:12px; color:#fff;';
-  overlay.innerHTML = `<h3>スロット</h3><div id="slotReels" style="display:flex; gap:6px; justify-content:center; align-items:center; font-size:28px; margin:8px 0;"><div style="width:80px;height:80px;background:#05101a;border-radius:8px;display:flex;align-items:center;justify-content:center;">-</div><div style="width:80px;height:80px;background:#05101a;border-radius:8px;display:flex;align-items:center;justify-content:center;">-</div><div style="width:80px;height:80px;background:#05101a;border-radius:8px;display:flex;align-items:center;justify-content:center;">-</div></div><div style="margin-top:8px;"><button class="act" id="spinBtn">スピン</button> <button class="act" id="closeSlot">閉じる</button></div>`;
-  document.body.appendChild(overlay);
-  const reels = overlay.querySelectorAll('#slotReels > div');
-  overlay.querySelector('#spinBtn').addEventListener('click', ()=>{
-    const symbols = ['🍒','7','🍋','⭐','BAR'];
-    // animate
-    let loops = 20;
-    const iv = setInterval(()=>{
-      reels.forEach(r => { r.innerText = symbols[Math.floor(Math.random()*symbols.length)]; });
-      loops--; if(loops <= 0){ clearInterval(iv);
-        // determine win
-        const win = Math.random() < (big?0.22:0.28);
-        if(win){ const prize = Math.floor(cost * payoutMultiplier); money += prize; updateHUD(); saveAll(); showNotice('スロット大当たり! +' + prize.toLocaleString() + '円', 2200); }
-        else showNotice('スロット ハズレ', 1400);
-      }
-    }, 90);
-  });
-  overlay.querySelector('#closeSlot').addEventListener('click', ()=> overlay.remove());
-}
-
-/* ---------- Hook shop buy to show slot UI if slot item ---------- */
-(function patchShopBuys(){
-  document.addEventListener('click', (e)=>{
-    if(e.target && e.target.classList && e.target.classList.contains('buy')){
-      const type = e.target.dataset.type;
-      const cost = Number(e.target.dataset.cost || 0);
-      if(type === 'slot'){ playSlotUI(cost); }
-    }
-  });
-})();
-
-/* ---------- Part2 frame hook: integrate police update and alarm logic ----------
-   We'll augment the main render loop by adding our update calls.
-   Since Part1 has engine.runRenderLoop, we attach to scene.onBeforeRenderObservable for minimal collision.
-*/
-scene.onBeforeRenderObservable.add(()=>{
-  const now = performance.now();
-  // compute dt
-  if(!scene._lastTick) scene._lastTick = now;
-  const dt = Math.min(0.06, (now - scene._lastTick)/1000);
-  scene._lastTick = now;
-
-  // police AI update
-  if(policeNPCs.length > 0) updatePolice(dt);
-
-  // bullets (BULLETS array) update via enhanced method
-  if(typeof updateBullets === 'function') updateBullets(dt);
-
-  // alarm logic
-  policeAlarmLogic(dt);
-
-  // LOD: remove shadows for far objects occasionally
-  // (simple performance housekeeping)
-  if(Perf.detailDistance){
-    for(const b of BUILDINGS){
-      const d = BABYLON.Vector3.Distance(b.mesh.position, fpsRig.position);
-      if(d > Perf.detailDistance){
-        if(b.mesh.receiveShadows) b.mesh.receiveShadows = false;
-      } else {
-        if(!b.mesh.receiveShadows) b.mesh.receiveShadows = true;
-      }
-    }
-  }
-});
-
-/* ---------- Debug UI / Controls (small) ---------- */
-(function debugUI(){
-  const btn = document.createElement('div');
-  btn.style.cssText = 'position:fixed; left:12px; bottom:12px; z-index:500; background:rgba(0,0,0,0.6); padding:8px; border-radius:8px;';
-  btn.innerHTML = `<button class="act" id="perfToggle">Perf: Mid</button> <button class="act" id="lockBtn">PointerLock</button>`;
-  document.body.appendChild(btn);
-  document.getElementById('perfToggle').addEventListener('click', ()=>{
-    if(Perf.detailDistance === 300){ Perf.setQuality('mid'); document.getElementById('perfToggle').innerText = 'Perf: Mid'; }
-    else if(Perf.detailDistance === 180){ Perf.setQuality('low'); document.getElementById('perfToggle').innerText = 'Perf: Low'; }
-    else { Perf.setQuality('high'); document.getElementById('perfToggle').innerText = 'Perf: High'; }
-  });
-  document.getElementById('lockBtn').addEventListener('click', ()=> tryPointerLock());
-})();
-
-/* ---------- Part2 finalization message ---------- */
-showNotice('Part2 ロード完了 — 金庫ミニゲームと警察AIが有効です。近くの建物に近づいて [F] を押すとショップが開きます。', 6000);
-
-/* ---------- expose some functions for debugging in console ---------- */
-window.vh_debug = {
-  summonPolice,
-  spawnOwnedVehicle,
-  startGoldMinigame,
-  showNotice,
-  policeNPCs,
-  BUILDINGS,
-  ShopBuildings,
-  Perf
-};
-
-</script>
