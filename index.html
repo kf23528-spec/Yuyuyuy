@@ -4002,288 +4002,429 @@ console.log('Part2 applied: CARD_EFFECTS enhanced, equip helpers, gacha UI augme
 
 })();
 </script>
-<!-- Part5 — 隠し解放イベントパッチ（実装コード） -->
-<script>
-/*
-  Part5: Hidden Unlock Event
-  - 目的: プレイヤーが「チャレンジ倍率 10^200 x」「ステージ30」「勝利（onGameEnd(true)）」かつ
-          期間内（2026-02-01 〜 2026-02-15）に到達した際、一度だけ専用オーバーレイを表示する。
-  - 方針: ゲームロジックには一切干渉せず、"監視・判定・一度きりの演出" のみ行う。
-  - 前提: 既存グローバル (save, session, state, openOverlay, closeOverlay, persistSaveLocal / persistSave) を使う。
-  - 追加エクスポート:
-      window.part5 = { wasUnlocked(), forceShowForDebug() , debug:true/false }
+<!-- Part5 — 到達演出・隠しフラグ（長く丁寧な実装）
+     目的:
+      - 「チャレンジ倍率が 10^200 x」で Stage30 を勝利した場合に
+        永続フラグを保存し、既存の各種オーバーレイ（勝利 / 強化 / ステージ選択 など）
+        の下部に控えめな「到達メッセージ」と CodePen へのリンクを追記する。
+      - Part1..Part4 の動作を一切壊さない（読み取り・監視・表示のみ）。
+      - 日付範囲: 2026-02-01 00:00 ～ 2026-02-15 23:59（ローカル時間）。
+      - 再現性と冪等性: 一度解放したら save にフラグを立て、二度目以降は上書きしない。
+      - ログやデバッグヘルパを丁寧に用意（問題発見時に役立つ）。
 */
-(function Part5HiddenUnlock(){
+<script>
+(function Part5ApexUnlock(){
   'use strict';
 
-  // --- 設定（必要に応じてここを変更） ---
-  const DEBUG = false; // 本番は false。デバッグ時は true にして console ログや強制起動を有効化
-  const UNLOCK_FLAG_KEY = 'hiddenFeatureUnlocked'; // save 内フラグ名
-  const UNLOCK_AT_KEY = 'hiddenFeatureUnlockedAt';
-  const TARGET_STAGE = 30;
-  // 日付はローカルタイムで判定（ユーザーの環境時刻を採用）
-  const RANGE_START = new Date(2026, 1, 1, 0, 0, 0, 0);   // 2026-02-01 00:00:00
-  const RANGE_END   = new Date(2026, 1, 15, 23, 59, 59, 999); // 2026-02-15 23:59:59.999
+  // -----------------------
+  // 設定: 日付レンジとURL
+  // -----------------------
+  const APEX_WINDOW_START = new Date(2026, 1, 1, 0, 0, 0);   // 2026-02-01 00:00 local (month index 1)
+  const APEX_WINDOW_END   = new Date(2026, 1, 15, 23, 59, 59); // 2026-02-15 23:59:59
+  const APEX_SAVE_KEY     = 'secretApexUnlocked'; // save field name to add to save
+  const APEX_LINK_URL     = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv';
+  const APEX_MESSAGE_TEXT = 'あなたは隠された機能を解放し、この世界の頂点に到達しました';
+  const APEX_MESSAGE_SUB  = '褒美を確認するにはこちらを開いてください';
 
-  // 目標チャレンジ識別（ラベルに "10^200" を含む or 完全一致）
-  const TARGET_LABEL_SUBSTRING = '10^200';
-  const ACCEPTABLE_LABELS = [ '10^200 x', '10^200 x (♾️系)', '10^200 x (♾️系)', '10^200 x (♾️系)' ];
-
-  // 表示するメッセージとリンク（リンクは表示文ではなくクリック可能要素で出す）
-  const DISPLAY_LINES = [
-    'あなたは隠された機能を解放し、',
-    'この世界の頂点に到達しました',
-    '',
-    'よって褒美です'
-  ];
-  const REWARD_URL = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv';
-
-  // --- ユーティリティ関数 --- 
-  function log(...args){ if(DEBUG || (window.part5 && window.part5.debug)) console.log('[Part5]', ...args); }
-  function safeGetSave(){
-    // save が未定義でも安全に扱う
-    if(typeof window.save === 'undefined' || window.save === null) {
-      window.save = window.save || {};
-    }
-    return window.save;
-  }
-  function safePersistSave(){
-    // 優先順位: persistSaveLocal -> persistSave -> localStorage fallback
+  // -----------------------
+  // 安全チェック: 保存 API
+  // -----------------------
+  // persistSaveLocal があるならそれを使う。なければ localStorage書き込み。
+  function saveFlagPersist(saveObj){
     try {
-      if(typeof window.persistSaveLocal === 'function') { persistSaveLocal(); return; }
-    } catch(e){ /* ignore */ }
-    try {
-      if(typeof window.persistSave === 'function') { persistSave(); return; }
-    } catch(e){ /* ignore */ }
-    try {
-      localStorage.setItem('grow_stg_save_v5', JSON.stringify(safeGetSave()));
-    } catch(e){ console.warn('[Part5] persist fallback failed', e); }
-  }
-  function inDateRange(d){
-    if(!(d instanceof Date)) return false;
-    return d.getTime() >= RANGE_START.getTime() && d.getTime() <= RANGE_END.getTime();
-  }
-
-  // チャレンジ倍率判定: 保存値（save.settings.challengeMultiplierLabel）を見て判定する
-  // 可能性のある保存形式を複数想定して堅牢に判定
-  function isTargetChallengeSelected(){
-    try {
-      const s = safeGetSave();
-      const label = s && s.settings && s.settings.challengeMultiplierLabel;
-      if(!label) {
-        // 代替: session に保持されたオブジェクトラベルや raw 値がある可能性
-        if(window.session && session._challengeLabel) {
-          return String(session._challengeLabel).indexOf(TARGET_LABEL_SUBSTRING) >= 0;
-        }
-        return false;
-      }
-      if(typeof label === 'string' && label.indexOf(TARGET_LABEL_SUBSTRING) >= 0) return true;
-      // 完全一致候補
-      if(ACCEPTABLE_LABELS.indexOf(label) >= 0) return true;
-      return false;
-    } catch(e){
-      console.warn('[Part5] isTargetChallengeSelected failed', e);
-      return false;
-    }
-  }
-
-  // save 内の既存フラグチェック
-  function wasAlreadyUnlocked(){
-    try {
-      const s = safeGetSave();
-      return !!s[UNLOCK_FLAG_KEY];
-    } catch(e){
-      return false;
-    }
-  }
-
-  // 実際にオーバーレイを開いて表示する処理（UIは既存の openOverlay を使う）
-  function showUnlockOverlay(){
-    try {
-      const builder = (panel) => {
-        panel.innerHTML = '';
-        const wrap = document.createElement('div');
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.alignItems = 'center';
-        wrap.style.justifyContent = 'center';
-        wrap.style.gap = '10px';
-
-        // メッセージ
-        const msgDiv = document.createElement('div');
-        msgDiv.style.whiteSpace = 'pre-line';
-        msgDiv.style.textAlign = 'center';
-        msgDiv.style.fontWeight = '900';
-        msgDiv.style.fontSize = '18px';
-        msgDiv.style.lineHeight = '1.4';
-        msgDiv.textContent = DISPLAY_LINES.join('\n');
-        wrap.appendChild(msgDiv);
-
-        // リンク（クリックで新しいタブを開く）
-        const linkWrap = document.createElement('div');
-        linkWrap.style.marginTop = '6px';
-        const linkBtn = document.createElement('a');
-        linkBtn.className = 'btn';
-        linkBtn.style.display = 'inline-block';
-        linkBtn.style.textDecoration = 'none';
-        linkBtn.style.cursor = 'pointer';
-        linkBtn.textContent = '報酬を受け取る';
-        linkBtn.href = REWARD_URL;
-        linkBtn.target = '_blank';
-        linkBtn.rel = 'noopener noreferrer';
-        linkWrap.appendChild(linkBtn);
-        wrap.appendChild(linkWrap);
-
-        // 閉じるボタン
-        const closeBtn = document.createElement('div');
-        closeBtn.className = 'btn';
-        closeBtn.style.marginTop = '8px';
-        closeBtn.textContent = '閉じる';
-        closeBtn.onclick = () => {
-          try { closeOverlay(); } catch(e){ /* ignore */ }
-        };
-        wrap.appendChild(closeBtn);
-
-        panel.appendChild(wrap);
-      };
-
-      // openOverlay が存在すればそれを使う（既存UIに委ねる）
-      if(typeof window.openOverlay === 'function') {
-        try {
-          openOverlay('hiddenUnlock', builder);
-          log('unlock overlay shown via openOverlay');
-          return true;
-        } catch(e){
-          console.warn('[Part5] openOverlay threw, falling back', e);
-        }
-      }
-      // fallback: minimal direct overlay DOM (if ui.overlay etc. are present)
-      if(window.ui && ui.overlay && ui.overlayPanel){
-        try {
-          ui.overlay.style.display = 'flex';
-          ui.overlay.setAttribute('aria-hidden','false');
-          ui.overlayPanel.innerHTML = '';
-          builder(ui.overlayPanel);
-          return true;
-        } catch(e){
-          console.warn('[Part5] fallback overlay failed', e);
-        }
-      }
-      // どれもだめなら alert（最終手段）
-      alert(DISPLAY_LINES.join('\n') + '\n\n報酬: ' + REWARD_URL);
-      return false;
-    } catch(e){
-      console.error('[Part5] showUnlockOverlay error', e);
-      return false;
-    }
-  }
-
-  // 判定とアンロック処理（成功したら保存フラグを立てる）
-  function tryUnlockIfEligible(context){
-    try {
-      log('tryUnlockIfEligible context:', context || {});
-      // すでにアンロック済みなら無視
-      if(wasAlreadyUnlocked()){
-        log('already unlocked; ignoring');
-        return false;
-      }
-
-      // 必要条件: onGameEnd が勝利（true）
-      // context.win may be passed; otherwise rely on argument
-      const winFlag = (typeof context === 'object' && context.win !== undefined) ? !!context.win : true;
-      if(!winFlag) { log('not a win; abort'); return false; }
-
-      // 必要条件: ステージが 30（session.currentStage）
-      if(!(window.session && session.currentStage === TARGET_STAGE)){
-        log('stage mismatch', session && session.currentStage);
-        return false;
-      }
-
-      // 必要条件: チャレンジ倍率が 10^200 系
-      if(!isTargetChallengeSelected()){
-        log('challenge mismatch; selected label:', safeGetSave() && safeGetSave().settings && safeGetSave().settings.challengeMultiplierLabel);
-        return false;
-      }
-
-      // 必要条件: 日付が 2026-02-01 .. 2026-02-15 の間
-      const now = new Date();
-      if(!inDateRange(now)){
-        log('date out of range', now);
-        return false;
-      }
-
-      // --- すべて満たした: 一度だけアンロック処理 ---
-      const s = safeGetSave();
-      s[UNLOCK_FLAG_KEY] = true;
-      s[UNLOCK_AT_KEY] = now.toISOString ? now.toISOString() : String(now.getTime());
-      safePersistSave();
-      log('hidden feature unlocked; showing overlay');
-      // show overlay (non-blocking)
-      try {
-        showUnlockOverlay();
-      } catch(e){
-        console.warn('[Part5] showUnlockOverlay failed', e);
-      }
-      return true;
-    } catch(e){
-      console.error('[Part5] tryUnlockIfEligible failed', e);
-      return false;
-    }
-  }
-
-  // --- onGameEnd ラッパー: オリジナルを壊さず後処理で判定 ---
-  (function wrapOnGameEnd(){
-    try {
-      const orig = (typeof window.onGameEnd === 'function') ? window.onGameEnd : null;
-      window.onGameEnd = function(win){
-        // call original first (preserve behavior)
-        try {
-          if(orig) orig(win);
-        } catch(e){
-          console.warn('[Part5] original onGameEnd threw', e);
-        }
-        // async-safe: 実行の安定性を高めるため少し遅延して判定（画面・session 更新が済む時間を確保）
-        setTimeout(() => {
+      if(saveObj && typeof saveObj === 'object'){
+        saveObj[APEX_SAVE_KEY] = true;
+        if(typeof persistSaveLocal === 'function'){
+          try { persistSaveLocal(); } catch(e){ /* ignore */ }
+        } else if(typeof persistSave === 'function'){
+          try { persistSave(); } catch(e){ /* ignore */ }
+        } else if(typeof localStorage !== 'undefined' && typeof window.SAVE_KEY !== 'undefined'){
           try {
-            tryUnlockIfEligible({ win: !!win });
-          } catch(e){
-            console.error('[Part5] tryUnlockIfEligible threw from wrapper', e);
-          }
-        }, 120);
-      };
-      log('onGameEnd wrapped by Part5');
-    } catch(e){
-      console.error('[Part5] wrapOnGameEnd failed', e);
-    }
-  })();
+            // try to update stored save if possible (best-effort fallback)
+            const raw = localStorage.getItem(window.SAVE_KEY || 'grow_stg_save_v5');
+            if(raw){
+              const parsed = JSON.parse(raw);
+              parsed[APEX_SAVE_KEY] = true;
+              localStorage.setItem(window.SAVE_KEY || 'grow_stg_save_v5', JSON.stringify(parsed));
+            } else {
+              // if no global save key, write a lightweight marker
+              localStorage.setItem(APEX_SAVE_KEY, '1');
+            }
+          } catch(e){ /* ignore */ }
+        } else {
+          try { localStorage.setItem(APEX_SAVE_KEY, '1'); } catch(e){ /* ignore */ }
+        }
+      } else {
+        try { localStorage.setItem(APEX_SAVE_KEY, '1'); } catch(e){ /* ignore */ }
+      }
+    } catch(e){ console.warn('[Part5] saveFlagPersist failed', e); }
+  }
 
-  // --- 開発用: 強制表示トリガー & ステータス関数 ---
-  window.part5 = window.part5 || {};
-  window.part5.debug = DEBUG;
-  window.part5.wasUnlocked = function(){ return !!(safeGetSave() && safeGetSave()[UNLOCK_FLAG_KEY]); };
-  window.part5.forceShowForDebug = function(){
-    if(!(window.session && session.currentStage)) {
-      console.warn('[part5] session not present; forcing stage=30 temporarily for debug');
-    }
-    // Temporarily ensure preconditions to allow UI test: set label and stage, but DO NOT modify save flag
-    const originalLabel = (safeGetSave() && safeGetSave().settings && save.settings.challengeMultiplierLabel) ? save.settings.challengeMultiplierLabel : null;
+  // -----------------------
+  // 判定ユーティリティ
+  // -----------------------
+  // 日付チェック（ローカル時間）
+  function isInApexWindow(now){
     try {
-      // set save setting label for UI only (do not persist)
-      save = safeGetSave();
-      save.settings = save.settings || {};
-      save.settings.challengeMultiplierLabel = '10^200 x'; // in-memory only
-      if(!session.currentStage) session.currentStage = TARGET_STAGE;
-      showUnlockOverlay();
-    } catch(e){
-      console.error('[part5] forceShowForDebug failed', e);
-    } finally {
-      if(originalLabel !== null) { save.settings.challengeMultiplierLabel = originalLabel; }
-    }
-  };
-  window.part5.tryUnlockIfEligible = tryUnlockIfEligible;
+      const t = now || new Date();
+      return t >= APEX_WINDOW_START && t <= APEX_WINDOW_END;
+    } catch(e){ return false; }
+  }
 
-  // --- 最終ログ ---
-  log('Part5 initialized. Debug=', DEBUG);
+  // チャレンジ倍率が 10^200 を意味するかどうかを広く判定する
+  // 保存場所/形式の差を吸収する（label文字列, exponentプロパティ, オブジェクト化された保存 等）
+  function isChallenge10e200Selected(){
+    try {
+      // 1) まず save.settings を探す（標準的）
+      if(typeof save !== 'undefined' && save && save.settings){
+        // 順次可能性があるキーを確認
+        const s = save.settings;
+        // (A) 直に exponent というフィールドがある
+        if(typeof s.challengeMultiplierExponent === 'number' && s.challengeMultiplierExponent === 200) return true;
+        // (B) オブジェクトが保存されている場合
+        if(typeof s.challengeMultiplierObj === 'object' && s.challengeMultiplierObj){
+          if(typeof s.challengeMultiplierObj.exponent === 'number' && s.challengeMultiplierObj.exponent === 200) return true;
+          if(typeof s.challengeMultiplierObj.label === 'string' && /10\^? ?200|e200|10\^200/i.test(s.challengeMultiplierObj.label)) return true;
+        }
+        // (C) ラベル文字列（最も一般的）
+        if(typeof s.challengeMultiplierLabel === 'string' && /10\^? ?200|e200|10\^200|10\^200 x/i.test(s.challengeMultiplierLabel)) return true;
+        // (D) 保守的チェック: 数字 "200" と "10" が入っているラベル
+        if(typeof s.challengeMultiplierLabel === 'string' && /10/.test(s.challengeMultiplierLabel) && /200/.test(s.challengeMultiplierLabel)) return true;
+      }
+
+      // 2) DOM の select に JSON 文字列が残っているケース（チャレンジ選択値に JSON を入れていた実装）
+      try {
+        const sel = document.getElementById && document.getElementById('challengeSelect');
+        if(sel && sel.value){
+          try {
+            const v = JSON.parse(sel.value);
+            if(v && (v.exponent === 200 || /10\^? ?200|e200/.test(v.label || ''))) return true;
+          } catch(_){
+            // 非JSONなら文字列チェック
+            if(/10\^? ?200|e200|10\^200/i.test(sel.value)) return true;
+          }
+        }
+      } catch(e){ /* ignore */ }
+
+      // 3) session に直接 exponent 情報が入っている（稀）
+      if(typeof session !== 'undefined' && session){
+        if(typeof session.challengeMultiplierLabel === 'string' && /10\^? ?200|e200|10\^200/i.test(session.challengeMultiplierLabel)) return true;
+        if(typeof session.challengeMultiplierExponent === 'number' && session.challengeMultiplierExponent === 200) return true;
+      }
+
+      // 4) 最後の保険: 保存されている 'challengeMultiplier' オブジェクト全探索（柔軟）
+      try {
+        if(typeof save !== 'undefined' && save){
+          for(const k in save){
+            if(!save.hasOwnProperty(k)) continue;
+            const v = save[k];
+            if(typeof v === 'string' && /10\^? ?200|e200|10\^200/i.test(v)) return true;
+            if(typeof v === 'object' && v && (v.exponent === 200 || (v.label && /10\^? ?200|e200|10\^200/i.test(v.label)))) return true;
+          }
+        }
+      } catch(e){}
+    } catch(e){
+      console.warn('[Part5] isChallenge10e200Selected failed', e);
+    }
+    return false;
+  }
+
+  // 条件が満たされているか総合判定
+  function shouldUnlockApexOnWin(){
+    try {
+      // date window
+      if(!isInApexWindow(new Date())) return false;
+      // challenge multiplier must match
+      if(!isChallenge10e200Selected()) return false;
+      // must be stage 30 (session.currentStage or player.level? use session)
+      if(typeof session !== 'undefined' && session && Number(session.currentStage) === 30) return true;
+      // fallback: sometimes current stage stored as session.stage or session.waveStage
+      if(typeof session !== 'undefined' && session && Number(session.stage) === 30) return true;
+      return false;
+    } catch(e){
+      console.warn('[Part5] shouldUnlockApexOnWin error', e);
+      return false;
+    }
+  }
+
+  // -----------------------
+  // 表示ユーティリティ（既存 overlayPanel の下に追記）
+  // - 追記要素には data-apex-badge 属性を付け重複を防ぐ
+  // -----------------------
+  function buildApexBadgeElement(){
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-apex-badge', '1');
+    wrap.style.marginTop = '12px';
+    wrap.style.paddingTop = '10px';
+    wrap.style.borderTop = '1px solid rgba(255,255,255,0.04)';
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '6px';
+    // Title
+    const t = document.createElement('div');
+    t.style.fontWeight = '800';
+    t.style.color = '#ffdf6b';
+    t.style.textAlign = 'center';
+    t.textContent = APEX_MESSAGE_TEXT;
+    wrap.appendChild(t);
+    // Sub + link
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.flexDirection = 'row';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    const sub = document.createElement('div');
+    sub.className = 'small';
+    sub.textContent = APEX_MESSAGE_SUB;
+    row.appendChild(sub);
+    const link = document.createElement('a');
+    link.href = APEX_LINK_URL;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = '褒美を開く';
+    link.style.color = '#fff';
+    link.style.fontWeight = '800';
+    link.style.background = 'linear-gradient(90deg,#ffd36b,#ff8af3)';
+    link.style.padding = '6px 10px';
+    link.style.borderRadius = '8px';
+    row.appendChild(link);
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  // 既存 overlayPanel に追記する共通関数
+  function appendApexBadgeToPanel(panel){
+    try {
+      if(!panel || !(panel instanceof Element)) return;
+      // 既に追加済みか確認
+      if(panel.querySelector && panel.querySelector('[data-apex-badge]')) return;
+      const badge = buildApexBadgeElement();
+      panel.appendChild(badge);
+    } catch(e){
+      console.warn('[Part5] appendApexBadgeToPanel failed', e);
+    }
+  }
+
+  // overlay が開いたとき（openOverlay経由）に自動で付けるラッパーを提供
+  const origOpenOverlay = (typeof openOverlay === 'function') ? openOverlay : null;
+  function patchedOpenOverlay(mode, builder){
+    // wrap builder so we can append after original builder runs
+    try {
+      if(typeof origOpenOverlay === 'function'){
+        // call original with wrapped builder
+        origOpenOverlay(mode, function(panel){
+          // run original builder
+          try {
+            if(typeof builder === 'function') builder(panel);
+          } catch(e){
+            // builder threw — still continue to attempt append
+            console.error('[Part5] wrapped builder threw', e);
+          }
+          // append apex badge if unlocked OR if should show (we append only if flag true)
+          try {
+            const unlocked = (typeof save !== 'undefined' && save && save[APEX_SAVE_KEY]) || false;
+            if(unlocked || shouldShowApexBadgeTemporarily()){
+              appendApexBadgeToPanel(panel);
+            }
+          } catch(e){ /* ignore */ }
+        });
+        return;
+      }
+    } catch(e){
+      console.warn('[Part5] patchedOpenOverlay orig threw', e);
+    }
+    // fallback: if openOverlay not present (unlikely), emulate simple overlay builder then append
+    try {
+      if(ui && ui.overlay && ui.overlayPanel){
+        ui.overlay.style.display = 'flex';
+        ui.overlayPanel.innerHTML = '';
+        try { if(builder) builder(ui.overlayPanel); } catch(e){ console.error('[Part5] fallback builder threw', e); }
+        appendApexBadgeToPanel(ui.overlayPanel);
+      }
+    } catch(e){ console.warn('[Part5] fallback openOverlay failed', e); }
+  }
+
+  // 判断: 一時的に表示したい（今勝利直後など）場合
+  function shouldShowApexBadgeTemporarily(){
+    try {
+      // show if saved flag set OR (we are inside apex window AND challenge is 10^200)
+      if(typeof save !== 'undefined' && save && save[APEX_SAVE_KEY]) return true;
+      if(isInApexWindow(new Date()) && isChallenge10e200Selected() && session && (session.currentStage === 30 || session.stage === 30)) return true;
+    } catch(e){}
+    return false;
+  }
+
+  // replace global openOverlay with patched version (idempotent)
+  if(typeof window.openOverlay === 'function' && window._part5_patchedOpenOverlay !== true){
+    try {
+      window._part5_orig_openOverlay = window.openOverlay;
+      window.openOverlay = patchedOpenOverlay;
+      window._part5_patchedOpenOverlay = true;
+      console.log('[Part5] openOverlay patched for apex badge injection');
+    } catch(e){
+      console.warn('[Part5] openOverlay patch failed', e);
+    }
+  } else if(!window.openOverlay){
+    // provide a safe default openOverlay that also appends
+    window.openOverlay = patchedOpenOverlay;
+    window._part5_patchedOpenOverlay = true;
+    console.log('[Part5] openOverlay provided and patched (fallback)');
+  }
+
+  // -----------------------
+  // onGameEnd wrapper: 勝利時に判定してフラグを立てる（元の挙動は壊さない）
+  // -----------------------
+  if(typeof window.onGameEnd === 'function' && !window._part5_orig_onGameEndWrapped){
+    window._part5_orig_onGameEnd = window.onGameEnd;
+    window.onGameEnd = function(win){
+      try {
+        // call original first to preserve flow (it may open result overlay)
+        try { window._part5_orig_onGameEnd(win); } catch(e){ console.warn('[Part5] orig onGameEnd threw', e); }
+        // only act on victory
+        if(win === true){
+          // check stage 30 and challenge and date window
+          if(shouldUnlockApexOnWin()){
+            try {
+              // persist flag in save if possible (idempotent)
+              if(typeof save !== 'undefined' && save){
+                if(!save[APEX_SAVE_KEY]){
+                  save[APEX_SAVE_KEY] = true;
+                  try { saveFlagPersist(save); } catch(e){ /* ignore */ }
+                }
+              } else {
+                try { localStorage.setItem(APEX_SAVE_KEY, '1'); } catch(e){ /* ignore */ }
+              }
+            } catch(e){ console.warn('[Part5] saving apex flag failed', e); }
+            // If overlay is open (result panel), ensure badge appended now.
+            try {
+              const panel = (ui && ui.overlayPanel) ? ui.overlayPanel : (document.getElementById && document.getElementById('overlayPanel'));
+              if(panel) appendApexBadgeToPanel(panel);
+            } catch(e){ /* ignore */ }
+            // Also log for debug
+            console.log('[Part5] APEX unlocked: Stage30 win under 10^200 challenge within window');
+          } else {
+            // Not qualifying: optionally still attempt to append temporarily if window and challenge matched but stage mismatch? No.
+          }
+        }
+      } catch(e){
+        console.error('[Part5] onGameEnd wrapper failed', e);
+      }
+    };
+    window._part5_orig_onGameEndWrapped = true;
+    console.log('[Part5] onGameEnd wrapped for apex detection');
+  } else if(!window.onGameEnd){
+    // If no onGameEnd defined yet, create a safe stub so later code calling onGameEnd triggers our logic.
+    window.onGameEnd = function(win){
+      try {
+        if(win === true){
+          if(shouldUnlockApexOnWin()){
+            if(typeof save !== 'undefined' && save && !save[APEX_SAVE_KEY]){
+              save[APEX_SAVE_KEY] = true;
+              saveFlagPersist(save);
+            } else {
+              try { localStorage.setItem(APEX_SAVE_KEY, '1'); } catch(e){}
+            }
+            try {
+              const panel = (ui && ui.overlayPanel) ? ui.overlayPanel : (document.getElementById && document.getElementById('overlayPanel'));
+              if(panel) appendApexBadgeToPanel(panel);
+            } catch(e){}
+          }
+        }
+      } catch(e){ console.warn('[Part5] fallback onGameEnd handler error', e); }
+    };
+    window._part5_onGameEndProvidedStub = true;
+    console.log('[Part5] onGameEnd stub provided (no original found)');
+  }
+
+  // -----------------------
+  // 既存の各種パネル（強化画面・ステージ選択・レベルアップ等）が個別に
+  // openOverlay を経由して描画されていることを前提に、openOverlay をパッチ済みなので
+  // それだけで大半のケースに対応済み。
+  // ここでは念のため openUpgradePanel, buildStageSelection, openLevelUpChoices の後にも
+  // 明示的に追記を行う（存在する場合のみ）。
+  // -----------------------
+  function tryAppendToSpecificPanels(){
+    try {
+      // upgrade panel: if present in DOM, append
+      const panelIds = ['overlayPanel', 'upgradePanel', 'stageSelectPanel', 'levelUpPanel', 'cardDetailPanel', 'resultPanel'];
+      for(const id of panelIds){
+        try {
+          const p = document.getElementById && document.getElementById(id);
+          if(p) appendApexBadgeToPanel(p);
+        } catch(e){}
+      }
+    } catch(e){ /* ignore */ }
+  }
+
+  // wrap specific named openers if present to ensure patch (idempotent)
+  function wrapIfExists(name){
+    try {
+      if(typeof window[name] === 'function' && !window[`_part5_wrapped_${name}`]){
+        const orig = window[name];
+        window[name] = function(...args){
+          try { const ret = orig.apply(this, args); 
+                // schedule append after a short tick to let builder manipulate DOM
+                setTimeout(() => {
+                  try {
+                    const panel = (ui && ui.overlayPanel) ? ui.overlayPanel : (document.getElementById && document.getElementById('overlayPanel'));
+                    if(panel) appendApexBadgeToPanel(panel);
+                  } catch(e){ /* ignore */ }
+                }, 60);
+                return ret;
+              } catch(e){
+                console.warn(`[Part5] wrapped ${name} threw`, e);
+                // still attempt to append
+                setTimeout(() => {
+                  try {
+                    const panel = (ui && ui.overlayPanel) ? ui.overlayPanel : (document.getElementById && document.getElementById('overlayPanel'));
+                    if(panel) appendApexBadgeToPanel(panel);
+                  } catch(e){}
+                }, 60);
+              }
+        };
+        window[`_part5_wrapped_${name}`] = true;
+      }
+    } catch(e){ console.warn('[Part5] wrapIfExists failed for', name, e); }
+  }
+
+  // wrap likely panel openers
+  ['openUpgradePanel','buildStageSelection','openLevelUpChoices','openCardDetailPanel','openOverlay','startPlay','startWave'].forEach(n => wrapIfExists(n));
+
+  // -----------------------
+  // Debug helpers & expose API
+  // -----------------------
+  window._part5 = window._part5 || {};
+  Object.assign(window._part5, {
+    isInApexWindow,
+    isChallenge10e200Selected,
+    shouldUnlockApexOnWin,
+    appendApexBadgeToPanel,
+    buildApexBadgeElement,
+    markApexUnlockedManually: function(){
+      try {
+        if(typeof save !== 'undefined' && save){ save[APEX_SAVE_KEY] = true; saveFlagPersist(save); }
+        localStorage.setItem(APEX_SAVE_KEY, '1');
+        console.log('[Part5] Manually marked apex unlocked');
+        tryAppendToSpecificPanels();
+      } catch(e){ console.warn('[Part5] manual mark failed', e); }
+    },
+    _APEX_WINDOW_START: APEX_WINDOW_START,
+    _APEX_WINDOW_END: APEX_WINDOW_END
+  });
+
+  // -----------------------
+  // 最後に: 起動時に既に条件満たし済みで save に未登録ならば記録しておく（idempotent）
+  // - ただし勝利（onGameEnd）が必須なのでここでは記録はしない（勝利でのみフラグを立てる）。
+  // - ただし既に save にフラグがあるなら overlay を開いたときに表示されるようにしておく。
+  // -----------------------
+  try {
+    if(typeof save !== 'undefined' && save && save[APEX_SAVE_KEY]){
+      console.log('[Part5] Apex flag already present in save');
+    }
+  } catch(e){ /* ignore */ }
+
+  console.log('[Part5] Apex unlock system installed — will append message under overlays when conditions met.');
 })();
 </script>
 </body>
