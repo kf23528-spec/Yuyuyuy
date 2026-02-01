@@ -4002,274 +4002,362 @@ console.log('Part2 applied: CARD_EFFECTS enhanced, equip helpers, gacha UI augme
 
 })();
 </script>
+<!-- Part5 — 隠し解放イベントパッチ（実装版） -->
 <script>
 /*
-  Part5 — イースターエッグ通知パッチ（長く・丁寧）
-  概要:
-    - 条件を満たしたとき（チャレンジ倍率が "10^200" 系かつステージ30 をクリアし、
-      実行日時が 2026-02-01 〜 2026-02-15 の間）にのみ、専用の報酬メッセージを表示します。
-    - 表示はページ内オーバーレイ（既存の openOverlay / openOverlaySafe があればそれを活用）で行い、
-      メッセージ本文と「開く」ボタン（指定 URL を new tab で開く）を設置します。
-    - 表示は一度きり（save._part5_shown フラグ）で、再表示を防止します。
-    - 既存の onGameEnd / startPlay 等を壊さないように、ラップ（バックアップ→呼び出し→拡張）します。
-    - ログ・防護処理を充実させ、想定外の環境でも詰まらないように配慮しています。
-  使い方:
-    - Part1..Part4 の後にこのスクリプトを読み込んでください。
-    - そのまま貼るだけで動作します（既存のグローバル関数を呼び出す設計）。
+  Part5: Hidden Feature Unlock
+  - 目的: 指定条件（チャレンジ = 10^200、ステージ30、最終Waveクリア、勝利、かつ期間内）を満たした
+          プレイヤーに一度だけ「隠し機能解放」メッセージを表示し、指定のURLを開けるようにする。
+  - 設計方針:
+    1) ゲーム本体ロジックに干渉しない（観測専用）。既存 onGameEnd 等はラップして呼び出す。
+    2) 条件判定は厳密に（内部ラベル／exponent 等の複数の候補で堅牢に判定）。
+    3) 一度発火したら save にフラグを永続保存して二度と発火しない。
+    4) 表示は既存の overlay 機構を尊重（openOverlaySafe / openOverlay / 自前フォールバックを順に使用）。
+    5) デバッグ用のログ（state.debug が真のときのみ詳細出力）。
+    6) 日付判定はクライアントローカル時刻で行う（要件に合わせる）。
+  - 表示期間: 2026-02-01 00:00:00 ～ 2026-02-15 23:59:59（ローカルタイム）
+  - 表示文（固定）:
+      あなたは隠された機能を解放し、
+      この世界の頂点に到達しました
+
+      よって褒美です
+  - リンク: https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv
+  - 実装ノート: Part1..Part4 と並列に安全に動作するように丁寧にガードを入れてあります。
 */
 
-(function Part5Egg(){
-  'use strict';
+(function Part5HiddenUnlock(){
+  // --- 設定 ---
+  const PART5_URL = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv';
+  const DEBUG = !!(window.state && window.state.debug);
+  const DEFAULT_SAVE_KEY = (typeof SAVE_KEY !== 'undefined') ? SAVE_KEY : 'grow_stg_save_v5';
+  const UNLOCK_FLAG = 'hiddenFeatureUnlocked';
+  const UNLOCK_TS = 'hiddenFeatureUnlockedAt';
 
-  if(typeof window === 'undefined') return;
-  const w = window;
+  // 日付範囲（ローカルタイム）
+  const RANGE_START = new Date(2026, 1, 1, 0, 0, 0, 0);  // 2026-02-01 00:00:00
+  const RANGE_END   = new Date(2026, 1, 15, 23, 59, 59, 999); // 2026-02-15 23:59:59.999
 
-  // ------------- 設定 -------------
-  const EGG_URL = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv'; // ユーザー指定の開けるURL
-  const MESSAGE_JP = 'あなたは隠された機能を解放し、この世界の頂点に到達しました。よって褒美です。';
-  // 日付ウィンドウ（JST: +09:00）2026-02-01 00:00 ～ 2026-02-15 23:59:59
-  const WINDOW_START_MS = Date.parse('2026-02-01T00:00:00+09:00');
-  const WINDOW_END_MS   = Date.parse('2026-02-15T23:59:59+09:00');
+  // 内部判定に使うキー候補や文字列断片（将来変わっても緩やかに判定するため複数手段で）
+  const CHALLENGE_LABEL_FRAGMENTS = [
+    '10^200', '10^200 x', '10^200 x', '10^200 x (♾️系)', '10^200 x (♾️系)', '1e200', 'e200', '200' // 最低限の断片
+  ];
+  const CHALLENGE_EXPONENT_TARGET = 200;
+  const TARGET_STAGE = 30;
 
-  // ------------- ヘルパ -------------
-  function nowMs(){ try { return Date.now(); } catch(e) { return (new Date()).getTime(); } }
+  // ユーティリティ: ログ
+  function log(...args){ if(DEBUG) console.log('[Part5]', ...args); }
 
-  function inDateWindow(){
+  // ユーティリティ: 保存 API の安全な呼び出し
+  function loadSaveSafely(){
     try {
-      const t = nowMs();
-      return (t >= WINDOW_START_MS && t <= WINDOW_END_MS);
-    } catch(e){
-      console.warn('[Part5] inDateWindow error', e);
-      return false;
-    }
-  }
-
-  // チャレンジラベルが 10^200 系かどうか判定する (柔軟に substring を使う)
-  function isChallenge10e200(){
-    try {
-      // 複数の場所をチェック: save.settings.challengeMultiplierLabel, session.challengeLabel, session.stageDifficultyMultiplierLabel
-      const candidates = [];
-      try { if(w.save && w.save.settings && typeof w.save.settings.challengeMultiplierLabel === 'string') candidates.push(w.save.settings.challengeMultiplierLabel); } catch(_) {}
-      try { if(w.session && typeof w.session.challengeLabel === 'string') candidates.push(w.session.challengeLabel); } catch(_) {}
-      try { if(w.session && typeof w.session.challengeMultiplierLabel === 'string') candidates.push(w.session.challengeMultiplierLabel); } catch(_) {}
-      // also check session or save numeric/exponent representations (some parts store exponent)
-      try { if(w.save && w.save.settings && w.save.settings.challengeExponent) candidates.push(String(w.save.settings.challengeExponent)); } catch(_) {}
-      // normalize and test
-      for(const s of candidates){
-        if(!s) continue;
-        const lowered = String(s).toLowerCase();
-        if(lowered.indexOf('10^200') !== -1) return true;
-        if(lowered.indexOf('10e200') !== -1) return true;
-        if(lowered.indexOf('10^200 x') !== -1) return true;
-        if(lowered.indexOf('200') !== -1 && lowered.indexOf('10') !== -1 && lowered.indexOf('^') !== -1) {
-          // heuristic, but keep conservative
-          if(/10\^?200/.test(s)) return true;
+      if(typeof window.loadSave === 'function'){
+        // もし既存の loadSave があるならそれを使う（可能なら最新のオブジェクト）
+        try {
+          const s = window.loadSave();
+          if(s) return s;
+        } catch(e){
+          // fallthrough to localStorage
         }
       }
-      // If label not found, check if any saved selection contains exponent field equal to 200
-      if(w.save && w.save.settings && typeof w.save.settings.challengeMultiplierLabel === 'object' && w.save.settings.challengeMultiplierLabel.exponent === 200) return true;
-      return false;
+      const raw = localStorage.getItem(DEFAULT_SAVE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
     } catch(e){
-      console.warn('[Part5] isChallenge10e200 error', e);
-      return false;
+      console.warn('[Part5] loadSaveSafely failed', e);
+      return null;
+    }
+  }
+  function persistSaveSafely(saveObj){
+    try {
+      if(typeof window.persistSave === 'function'){
+        try { persistSave(); return; } catch(e){ /* continue to localStorage fallback */ }
+      }
+      if(typeof saveObj === 'object' && saveObj !== null){
+        localStorage.setItem(DEFAULT_SAVE_KEY, JSON.stringify(saveObj));
+      }
+    } catch(e){
+      console.warn('[Part5] persistSaveSafely failed', e);
     }
   }
 
-  // ------------- 安全なオーバーレイ表示ユーティリティ -------------
-  // 既に Part4 で openOverlaySafe/closeOverlaySafe が定義されていることを想定していますが、
-  // なければ既存の openOverlay を使い、なければ最小限のモーダルを作ります。
-  function showEggOverlay(){
+  // 内部: 判定対象のチャレンジ倍率が 10^200 かを堅牢に判断する関数
+  function detectChallengeIs10e200(){
     try {
-      // prevent duplicate showing in same runtime if save flag not yet persisted
-      if(w.save && w.save._part5_shown) {
-        console.log('[Part5] egg already shown (save flag present). skip.');
-        return;
+      // 1) check save.settings.challengeMultiplierLabel (most likely place)
+      const s = (typeof save !== 'undefined' && save && save.settings) ? save.settings.challengeMultiplierLabel : null;
+      if(typeof s === 'string' && s.length > 0){
+        for(const frag of CHALLENGE_LABEL_FRAGMENTS){
+          if(s.indexOf(frag) !== -1){
+            log('challenge detected via save.settings.challengeMultiplierLabel:', s);
+            return true;
+          }
+        }
       }
 
-      const builder = (panel) => {
-        panel.innerHTML = '';
-        const title = document.createElement('div'); title.style.fontWeight='900'; title.style.fontSize='18px'; title.style.marginBottom='8px';
-        title.textContent = '隠し機能解除';
-        panel.appendChild(title);
+      // 2) check session.selectedChallenge or session.challenge (possible places)
+      if(typeof session !== 'undefined' && session){
+        if(session.challenge && typeof session.challenge === 'object'){
+          if(Number(session.challenge.exponent) === CHALLENGE_EXPONENT_TARGET) { log('challenge detected via session.challenge.exponent'); return true; }
+          if(typeof session.challenge.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> session.challenge.label.indexOf(f)!==-1)){ log('challenge detected via session.challenge.label'); return true; }
+        }
+        if(session.selectedChallenge && typeof session.selectedChallenge === 'object'){
+          if(Number(session.selectedChallenge.exponent) === CHALLENGE_EXPONENT_TARGET) { log('challenge detected via session.selectedChallenge.exponent'); return true; }
+          if(typeof session.selectedChallenge.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> session.selectedChallenge.label.indexOf(f)!==-1)){ log('challenge detected via session.selectedChallenge.label'); return true; }
+        }
+      }
 
-        const msg = document.createElement('div'); msg.className = 'small'; msg.style.marginBottom = '12px';
-        msg.textContent = MESSAGE_JP;
-        panel.appendChild(msg);
-
-        // "開く" ボタン — 指定 URL を新しいタブで開く
-        const openBtn = document.createElement('div'); openBtn.className = 'btn'; openBtn.style.marginBottom = '8px';
-        openBtn.textContent = '褒美を開く';
-        openBtn.onclick = () => {
+      // 3) check DOM select element if present (challengeSelect)
+      try {
+        const el = document.getElementById('challengeSelect');
+        if(el && el.value){
           try {
-            window.open(EGG_URL, '_blank', 'noopener');
-          } catch(e){ console.warn('[Part5] openBtn window.open failed', e); }
-        };
-        panel.appendChild(openBtn);
-
-        // 直接リンク（アクセシビリティ）— ユーザーの指示どおり「表示メッセージではない」ので目立たせすぎず設置
-        const linkRow = document.createElement('div'); linkRow.className = 'small'; linkRow.style.marginTop='6px';
-        const anchor = document.createElement('a'); anchor.href = EGG_URL; anchor.target = '_blank'; anchor.rel = 'noopener'; anchor.textContent = '褒美（外部リンク）を開く';
-        anchor.style.color = '#9ae6ff';
-        linkRow.appendChild(anchor);
-        panel.appendChild(linkRow);
-
-        // 閉じる
-        const closeBtn = document.createElement('div'); closeBtn.className = 'btn'; closeBtn.style.marginTop='12px'; closeBtn.textContent = '閉じる';
-        closeBtn.onclick = () => { try { if(typeof closeOverlaySafe === 'function') closeOverlaySafe(); else if(typeof closeOverlay === 'function') closeOverlay(); } catch(e){} };
-        panel.appendChild(closeBtn);
-      };
-
-      // use safe overlay if available
-      if(typeof w.openOverlaySafe === 'function'){
-        w.openOverlaySafe('part5_egg', builder);
-      } else if(typeof w.openOverlay === 'function'){
-        try { w.openOverlay('part5_egg', builder); } catch(e){ createMinimalOverlay(builder); }
-      } else {
-        createMinimalOverlay(builder);
-      }
-
-      // mark shown in save so it won't reappear across sessions
-      try {
-        w.save = w.save || {};
-        w.save._part5_shown = true;
-        if(typeof safePersistSave === 'function') safePersistSave();
-        else {
-          try { localStorage.setItem('grow_stg_save_v5', JSON.stringify(w.save)); } catch(e){ console.warn('[Part5] persist fallback failed', e); }
-        }
-      } catch(e){ console.warn('[Part5] mark shown failed', e); }
-
-    } catch(e){
-      console.error('[Part5] showEggOverlay failed', e);
-    }
-  }
-
-  // 最低限の overlay 作成（openOverlay が無い環境用）
-  function createMinimalOverlay(builder){
-    try {
-      let overlay = document.getElementById('part5_min_overlay');
-      if(!overlay){
-        overlay = document.createElement('div');
-        overlay.id = 'part5_min_overlay';
-        overlay.style.position = 'fixed';
-        overlay.style.left = 0;
-        overlay.style.top = 0;
-        overlay.style.right = 0;
-        overlay.style.bottom = 0;
-        overlay.style.display = 'flex';
-        overlay.style.alignItems = 'center';
-        overlay.style.justifyContent = 'center';
-        overlay.style.background = 'rgba(0,0,0,0.6)';
-        overlay.style.zIndex = 9999;
-        const panel = document.createElement('div');
-        panel.id = 'part5_min_panel';
-        panel.style.background = 'linear-gradient(180deg,#08202b,#05262b)';
-        panel.style.padding = '14px';
-        panel.style.borderRadius = '12px';
-        panel.style.width = 'min(680px,92%)';
-        panel.style.maxHeight = '80vh';
-        panel.style.overflow = 'auto';
-        overlay.appendChild(panel);
-        document.body.appendChild(overlay);
-      }
-      const panel = document.getElementById('part5_min_panel');
-      if(panel){
-        try { builder(panel); } catch(e){ panel.innerHTML = `<div style="font-weight:900">エラー</div><div class="small">${String(e)}</div><div style="margin-top:8px" class="btn" id="part5_min_close">閉じる</div>`; const btn = document.getElementById('part5_min_close'); if(btn) btn.onclick = () => { overlay.style.display = 'none'; }; }
-      }
-    } catch(e){ console.warn('[Part5] createMinimalOverlay failed', e); }
-  }
-
-  // ------------- 条件チェック & トリガー -------------
-  // 条件:
-  //  - onGameEnd(win===true) が呼ばれる（またはセッションが終了したと判定できる瞬間）
-  //  - session.currentStage === 30
-  //  - チャレンジ倍率が 10^200 系であること（isChallenge10e200()）
-  //  - 日付が 2026-02-01 ～ 2026-02-15（inDateWindow()）
-  //  - かつまだ表示していない（save._part5_shown 未設定）
-  //
-  // 実装:
-  //  - onGameEnd をラップして上記をチェックして showEggOverlay() を呼ぶ（同時に元の onGameEnd を呼ぶ）
-
-  const orig_onGameEnd = (typeof onGameEnd === 'function') ? onGameEnd : null;
-
-  w.onGameEnd = function(win){
-    try {
-      // call original first so game state is finalized (prefer original behavior)
-      if(typeof orig_onGameEnd === 'function'){
-        try { orig_onGameEnd(win); } catch(e){ console.warn('[Part5] orig_onGameEnd threw', e); }
-      }
-    } catch(e){ console.warn('[Part5] calling orig_onGameEnd failed', e); }
-
-    try {
-      // only trigger on win === true
-      if(!win) return;
-      // ensure session exists
-      const stage = (w.session && typeof w.session.currentStage !== 'undefined') ? w.session.currentStage : (typeof session !== 'undefined' && session.currentStage ? session.currentStage : null);
-      if(stage === null) {
-        // Try fallback: session.wave maybe indicates final; we keep conservative
-        return;
-      }
-      // check stage 30
-      if(Number(stage) !== 30) return;
-
-      // check date range
-      if(!inDateWindow()){
-        // not in the allowed date window -> do nothing
-        console.log('[Part5] not in date window; skipping egg overlay');
-        return;
-      }
-
-      // check challenge label (10^200)
-      if(!isChallenge10e200()){
-        console.log('[Part5] challenge label is not 10^200; skipping egg overlay');
-        return;
-      }
-
-      // check shown flag
-      try {
-        w.save = w.save || {};
-        if(w.save._part5_shown){
-          console.log('[Part5] already shown per save flag; skipping');
-          return;
+            const parsed = JSON.parse(el.value);
+            if(parsed && (Number(parsed.exponent) === CHALLENGE_EXPONENT_TARGET || (typeof parsed.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> parsed.label.indexOf(f)!==-1)))){
+              log('challenge detected via DOM challengeSelect (parsed)'); return true;
+            }
+          } catch(e){
+            // value might be a label string
+            const v = String(el.value || '');
+            if(CHALLENGE_LABEL_FRAGMENTS.some(f => v.indexOf(f) !== -1)){ log('challenge detected via DOM challengeSelect (string)'); return true; }
+          }
         }
       } catch(e){
-        console.warn('[Part5] checking save._part5_shown failed', e);
+        // ignore DOM parse errors
       }
 
-      // All conditions met -> show overlay
-      console.log('[Part5] conditions met: showing egg overlay now');
-      try { showEggOverlay(); } catch(e){ console.error('[Part5] showEggOverlay threw', e); }
-    } catch(e){
-      console.error('[Part5] onGameEnd wrapper error', e);
-    }
-  };
+      // 4) fallback: check save.settings.challengeMultiplierLabel raw string variations
+      if(typeof save !== 'undefined' && save && save.settings && typeof save.settings.challengeMultiplierLabel === 'string'){
+        const v = save.settings.challengeMultiplierLabel;
+        if(CHALLENGE_LABEL_FRAGMENTS.some(f => v.indexOf(f) !== -1)){ log('challenge detected via save.settings (fallback)'); return true; }
+      }
 
-  // ------------- 追加: セーフティネット -------------
-  // もし既にゲームが終了していて条件を満たすとき（ページリロード直後など）に表示し損ねている可能性に備え、
-  // 軽いチェックを数秒後に一度だけ実行します（即時処理ではなく安全な補助）。
-  setTimeout(() => {
+      log('challenge detection: NOT matched');
+      return false;
+    } catch(e){
+      console.warn('[Part5] detectChallengeIs10e200 error', e);
+      return false;
+    }
+  }
+
+  // 日付判定
+  function isNowWithinRange(){
+    const now = new Date();
+    const ok = now >= RANGE_START && now <= RANGE_END;
+    log('date check', now.toISOString(), 'withinRange?', ok);
+    return ok;
+  }
+
+  // 保存フラグ確認
+  function isAlreadyUnlocked(){
     try {
-      // Only run supplemental check if not already shown
-      w.save = w.save || {};
-      if(w.save._part5_shown) return;
-      // If session indicates completed stage 30 and win was true recently, trigger
-      if(typeof w.session !== 'undefined' && Number(w.session.currentStage) === 30){
-        // Heuristic: if waveState === 'cleared' or state.running === false and last session.xp present, try trigger
-        const maybeFinished = (w.session.waveState === 'cleared') || (w.state && w.state.running === false);
-        if(maybeFinished && inDateWindow() && isChallenge10e200()){
-          console.log('[Part5] supplemental check: attempting showEggOverlay');
-          showEggOverlay();
+      if(typeof save !== 'undefined' && save && save[UNLOCK_FLAG]) return true;
+      const persisted = loadSaveSafely();
+      if(persisted && persisted[UNLOCK_FLAG]) return true;
+      return false;
+    } catch(e){
+      console.warn('[Part5] isAlreadyUnlocked error', e);
+      return false;
+    }
+  }
+
+  // フラグをつける（保存）
+  function markAsUnlocked(){
+    try {
+      // update in-memory save if exists
+      if(typeof save !== 'undefined' && save){
+        save[UNLOCK_FLAG] = true;
+        save[UNLOCK_TS] = Date.now();
+        try { persistSaveSafely(save); } catch(e){ /* ignore */ }
+      } else {
+        // load, set, and persist
+        const s = loadSaveSafely() || {};
+        s[UNLOCK_FLAG] = true;
+        s[UNLOCK_TS] = Date.now();
+        persistSaveSafely(s);
+      }
+      log('marked save as unlocked');
+    } catch(e){
+      console.warn('[Part5] markAsUnlocked failed', e);
+    }
+  }
+
+  // overlay 表示ユーティリティ（既存の安全な openOverlaySafe を優先して使う）
+  function showHiddenUnlockOverlay(){
+    try {
+      const builder = function(panel){
+        panel.innerHTML = '';
+        // Title / message block
+        const title = document.createElement('div'); title.style.fontWeight = '900'; title.style.fontSize = '18px';
+        title.textContent = '隠し機能を解放しました';
+        panel.appendChild(title);
+
+        const msg = document.createElement('div'); msg.className = 'small'; msg.style.marginTop = '12px';
+        // Message with required line breaks
+        msg.innerText = 'あなたは隠された機能を解放し、\nこの世界の頂点に到達しました\n\nよって褒美です';
+        panel.appendChild(msg);
+
+        // Link button (anchor) — not raw URL in text
+        const linkRow = document.createElement('div'); linkRow.style.display = 'flex'; linkRow.style.gap = '8px'; linkRow.style.marginTop = '14px';
+        const openBtn = document.createElement('a');
+        openBtn.className = 'btn';
+        openBtn.textContent = '報酬を開く';
+        openBtn.href = PART5_URL;
+        openBtn.target = '_blank';
+        openBtn.rel = 'noopener noreferrer';
+        // provide small hint note (not the URL itself)
+        const hint = document.createElement('div'); hint.className = 'small'; hint.style.marginTop = '8px'; hint.style.opacity = '0.9';
+        hint.textContent = '（別タブで報酬ページが開きます）';
+        linkRow.appendChild(openBtn);
+
+        // Close button
+        const closeBtn = document.createElement('div');
+        closeBtn.className = 'btn secondary';
+        closeBtn.textContent = '閉じる';
+        closeBtn.style.marginLeft = '8px';
+        closeBtn.onclick = function(){
+          try { if(typeof closeOverlay === 'function') closeOverlay(); } catch(e){ /* fallback below */ }
+        };
+        linkRow.appendChild(closeBtn);
+        panel.appendChild(linkRow);
+        panel.appendChild(hint);
+
+        // Mark as unlocked now that we've shown UI (persist immediately)
+        markAsUnlocked();
+      };
+
+      // prefer openOverlaySafe if present (from Part4)
+      if(typeof openOverlaySafe === 'function'){
+        try {
+          openOverlaySafe('hiddenUnlock', builder);
+          return;
+        } catch(e){
+          console.warn('[Part5] openOverlaySafe threw, falling back', e);
         }
       }
-    } catch(e){ /* non-fatal */ console.warn('[Part5] supplemental check failed', e); }
-  }, 2500);
 
-  // ------------- エクスポート / デバッグ -------------
-  w._part5 = w._part5 || {};
-  w._part5.showEggOverlay = showEggOverlay;
-  w._part5.isChallenge10e200 = isChallenge10e200;
-  w._part5.inDateWindow = inDateWindow;
+      // fallback to openOverlay if present
+      if(typeof openOverlay === 'function'){
+        try {
+          openOverlay('hiddenUnlock', builder);
+          return;
+        } catch(e){
+          console.warn('[Part5] openOverlay threw, falling back', e);
+        }
+      }
 
-  console.log('[Part5] patch installed: egg trigger on stage30 + 10^200 challenge between 2026-02-01 and 2026-02-15.');
+      // 最終フォールバック: 手動DOM overlay（安全に作る）
+      try {
+        // try to use ui.overlay/ui.overlayPanel if available
+        const ov = (window.ui && ui.overlay) ? ui.overlay : null;
+        const panel = (window.ui && ui.overlayPanel) ? ui.overlayPanel : null;
+        if(ov && panel){
+          ov.style.display = 'flex';
+          panel.innerHTML = '';
+          builder(panel);
+          return;
+        } else {
+          // as last resort, alert + confirm flow (non-ideal but safe)
+          try {
+            const proceed = confirm('隠し機能を解放しました。報酬ページを開きますか？');
+            if(proceed) window.open(PART5_URL, '_blank', 'noopener');
+            markAsUnlocked();
+            return;
+          } catch(e){
+            // ignore
+          }
+        }
+      } catch(e){
+        console.error('[Part5] final overlay fallback failed', e);
+      }
+    } catch(e){
+      console.error('[Part5] showHiddenUnlockOverlay error', e);
+    }
+  }
+
+  // コア: 条件判定→表示の主処理
+  function part5_checkAndTrigger(winArg){
+    try {
+      // only trigger on victory
+      if(!winArg) { log('not a win; skipping'); return; }
+      // date window check
+      if(!isNowWithinRange()){
+        log('outside allowed date range; skipping');
+        return;
+      }
+      // already unlocked?
+      if(isAlreadyUnlocked()){
+        log('already unlocked previously; skipping');
+        return;
+      }
+      // stage check (robust: check session.currentStage, session.currentStageNumber, save.lastStage, etc)
+      let stageOk = false;
+      if(typeof session !== 'undefined' && session && (Number(session.currentStage) === TARGET_STAGE || Number(session.stage) === TARGET_STAGE)) stageOk = true;
+      if(!stageOk){
+        // try save or other fallback fields
+        if(typeof save !== 'undefined' && save && (Number(save.lastStageCompleted) === TARGET_STAGE || Number(save.currentStage) === TARGET_STAGE)) stageOk = true;
+      }
+      if(!stageOk){
+        log('stage check failed', session && session.currentStage, save && save.currentStage);
+        return;
+      }
+      // challenge check
+      if(!detectChallengeIs10e200()){
+        log('challenge exponent check failed');
+        return;
+      }
+      // Wave / finality: We are called from onGameEnd(true) so that should be sufficient.
+      log('All checks passed — showing hidden unlock overlay');
+      // Show overlay / link
+      showHiddenUnlockOverlay();
+    } catch(e){
+      console.error('[Part5] part5_checkAndTrigger error', e);
+    }
+  }
+
+  // --- Hook onGameEnd (wrap if exists) ---
+  try {
+    const origOnGameEnd = typeof window.onGameEnd === 'function' ? window.onGameEnd : null;
+    // avoid double-wrapping
+    if(!window._part5_onGameEndPatched){
+      window.onGameEnd = function(win){
+        // call original first so game can perform its end-of-game bookkeeping / overlays
+        try {
+          if(typeof origOnGameEnd === 'function'){
+            try { origOnGameEnd(win); } catch(e){ console.warn('[Part5] origOnGameEnd threw', e); }
+          }
+        } catch(e){
+          console.warn('[Part5] calling origOnGameEnd failed', e);
+        }
+        // then perform our non-intrusive check & show
+        try {
+          part5_checkAndTrigger(win);
+        } catch(e){
+          console.error('[Part5] error in part5_checkAndTrigger', e);
+        }
+      };
+      window._part5_onGameEndPatched = true;
+      log('onGameEnd wrapped by Part5');
+    } else {
+      log('onGameEnd already patched by Part5 (skipping wrap)');
+    }
+  } catch(e){
+    console.error('[Part5] onGameEnd patching failed', e);
+  }
+
+  // --- 小ヘルパ: 外部から手動トリガー（デバッグ用） ---
+  window._part5 = window._part5 || {};
+  window._part5.triggerManualCheck = function(forceShow){
+    try {
+      if(forceShow){
+        showHiddenUnlockOverlay();
+      } else {
+        part5_checkAndTrigger(true);
+      }
+    } catch(e){ console.error('[Part5] manual trigger failed', e); }
+  };
+  window._part5.isUnlocked = isAlreadyUnlocked;
+
+  log('Part5 initialized (hidden unlock watcher active)');
 })();
 </script>
 </body>
