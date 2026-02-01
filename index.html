@@ -4002,362 +4002,288 @@ console.log('Part2 applied: CARD_EFFECTS enhanced, equip helpers, gacha UI augme
 
 })();
 </script>
-<!-- Part5 — 隠し解放イベントパッチ（実装版） -->
+<!-- Part5 — 隠し解放イベントパッチ（実装コード） -->
 <script>
 /*
-  Part5: Hidden Feature Unlock
-  - 目的: 指定条件（チャレンジ = 10^200、ステージ30、最終Waveクリア、勝利、かつ期間内）を満たした
-          プレイヤーに一度だけ「隠し機能解放」メッセージを表示し、指定のURLを開けるようにする。
-  - 設計方針:
-    1) ゲーム本体ロジックに干渉しない（観測専用）。既存 onGameEnd 等はラップして呼び出す。
-    2) 条件判定は厳密に（内部ラベル／exponent 等の複数の候補で堅牢に判定）。
-    3) 一度発火したら save にフラグを永続保存して二度と発火しない。
-    4) 表示は既存の overlay 機構を尊重（openOverlaySafe / openOverlay / 自前フォールバックを順に使用）。
-    5) デバッグ用のログ（state.debug が真のときのみ詳細出力）。
-    6) 日付判定はクライアントローカル時刻で行う（要件に合わせる）。
-  - 表示期間: 2026-02-01 00:00:00 ～ 2026-02-15 23:59:59（ローカルタイム）
-  - 表示文（固定）:
-      あなたは隠された機能を解放し、
-      この世界の頂点に到達しました
-
-      よって褒美です
-  - リンク: https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv
-  - 実装ノート: Part1..Part4 と並列に安全に動作するように丁寧にガードを入れてあります。
+  Part5: Hidden Unlock Event
+  - 目的: プレイヤーが「チャレンジ倍率 10^200 x」「ステージ30」「勝利（onGameEnd(true)）」かつ
+          期間内（2026-02-01 〜 2026-02-15）に到達した際、一度だけ専用オーバーレイを表示する。
+  - 方針: ゲームロジックには一切干渉せず、"監視・判定・一度きりの演出" のみ行う。
+  - 前提: 既存グローバル (save, session, state, openOverlay, closeOverlay, persistSaveLocal / persistSave) を使う。
+  - 追加エクスポート:
+      window.part5 = { wasUnlocked(), forceShowForDebug() , debug:true/false }
 */
-
 (function Part5HiddenUnlock(){
-  // --- 設定 ---
-  const PART5_URL = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv';
-  const DEBUG = !!(window.state && window.state.debug);
-  const DEFAULT_SAVE_KEY = (typeof SAVE_KEY !== 'undefined') ? SAVE_KEY : 'grow_stg_save_v5';
-  const UNLOCK_FLAG = 'hiddenFeatureUnlocked';
-  const UNLOCK_TS = 'hiddenFeatureUnlockedAt';
+  'use strict';
 
-  // 日付範囲（ローカルタイム）
-  const RANGE_START = new Date(2026, 1, 1, 0, 0, 0, 0);  // 2026-02-01 00:00:00
+  // --- 設定（必要に応じてここを変更） ---
+  const DEBUG = false; // 本番は false。デバッグ時は true にして console ログや強制起動を有効化
+  const UNLOCK_FLAG_KEY = 'hiddenFeatureUnlocked'; // save 内フラグ名
+  const UNLOCK_AT_KEY = 'hiddenFeatureUnlockedAt';
+  const TARGET_STAGE = 30;
+  // 日付はローカルタイムで判定（ユーザーの環境時刻を採用）
+  const RANGE_START = new Date(2026, 1, 1, 0, 0, 0, 0);   // 2026-02-01 00:00:00
   const RANGE_END   = new Date(2026, 1, 15, 23, 59, 59, 999); // 2026-02-15 23:59:59.999
 
-  // 内部判定に使うキー候補や文字列断片（将来変わっても緩やかに判定するため複数手段で）
-  const CHALLENGE_LABEL_FRAGMENTS = [
-    '10^200', '10^200 x', '10^200 x', '10^200 x (♾️系)', '10^200 x (♾️系)', '1e200', 'e200', '200' // 最低限の断片
+  // 目標チャレンジ識別（ラベルに "10^200" を含む or 完全一致）
+  const TARGET_LABEL_SUBSTRING = '10^200';
+  const ACCEPTABLE_LABELS = [ '10^200 x', '10^200 x (♾️系)', '10^200 x (♾️系)', '10^200 x (♾️系)' ];
+
+  // 表示するメッセージとリンク（リンクは表示文ではなくクリック可能要素で出す）
+  const DISPLAY_LINES = [
+    'あなたは隠された機能を解放し、',
+    'この世界の頂点に到達しました',
+    '',
+    'よって褒美です'
   ];
-  const CHALLENGE_EXPONENT_TARGET = 200;
-  const TARGET_STAGE = 30;
+  const REWARD_URL = 'https://codepen.io/Yuyuyuyuyiko/pen/JoKLJNv';
 
-  // ユーティリティ: ログ
-  function log(...args){ if(DEBUG) console.log('[Part5]', ...args); }
-
-  // ユーティリティ: 保存 API の安全な呼び出し
-  function loadSaveSafely(){
-    try {
-      if(typeof window.loadSave === 'function'){
-        // もし既存の loadSave があるならそれを使う（可能なら最新のオブジェクト）
-        try {
-          const s = window.loadSave();
-          if(s) return s;
-        } catch(e){
-          // fallthrough to localStorage
-        }
-      }
-      const raw = localStorage.getItem(DEFAULT_SAVE_KEY);
-      if(!raw) return null;
-      return JSON.parse(raw);
-    } catch(e){
-      console.warn('[Part5] loadSaveSafely failed', e);
-      return null;
+  // --- ユーティリティ関数 --- 
+  function log(...args){ if(DEBUG || (window.part5 && window.part5.debug)) console.log('[Part5]', ...args); }
+  function safeGetSave(){
+    // save が未定義でも安全に扱う
+    if(typeof window.save === 'undefined' || window.save === null) {
+      window.save = window.save || {};
     }
+    return window.save;
   }
-  function persistSaveSafely(saveObj){
+  function safePersistSave(){
+    // 優先順位: persistSaveLocal -> persistSave -> localStorage fallback
     try {
-      if(typeof window.persistSave === 'function'){
-        try { persistSave(); return; } catch(e){ /* continue to localStorage fallback */ }
-      }
-      if(typeof saveObj === 'object' && saveObj !== null){
-        localStorage.setItem(DEFAULT_SAVE_KEY, JSON.stringify(saveObj));
-      }
-    } catch(e){
-      console.warn('[Part5] persistSaveSafely failed', e);
-    }
+      if(typeof window.persistSaveLocal === 'function') { persistSaveLocal(); return; }
+    } catch(e){ /* ignore */ }
+    try {
+      if(typeof window.persistSave === 'function') { persistSave(); return; }
+    } catch(e){ /* ignore */ }
+    try {
+      localStorage.setItem('grow_stg_save_v5', JSON.stringify(safeGetSave()));
+    } catch(e){ console.warn('[Part5] persist fallback failed', e); }
+  }
+  function inDateRange(d){
+    if(!(d instanceof Date)) return false;
+    return d.getTime() >= RANGE_START.getTime() && d.getTime() <= RANGE_END.getTime();
   }
 
-  // 内部: 判定対象のチャレンジ倍率が 10^200 かを堅牢に判断する関数
-  function detectChallengeIs10e200(){
+  // チャレンジ倍率判定: 保存値（save.settings.challengeMultiplierLabel）を見て判定する
+  // 可能性のある保存形式を複数想定して堅牢に判定
+  function isTargetChallengeSelected(){
     try {
-      // 1) check save.settings.challengeMultiplierLabel (most likely place)
-      const s = (typeof save !== 'undefined' && save && save.settings) ? save.settings.challengeMultiplierLabel : null;
-      if(typeof s === 'string' && s.length > 0){
-        for(const frag of CHALLENGE_LABEL_FRAGMENTS){
-          if(s.indexOf(frag) !== -1){
-            log('challenge detected via save.settings.challengeMultiplierLabel:', s);
-            return true;
-          }
+      const s = safeGetSave();
+      const label = s && s.settings && s.settings.challengeMultiplierLabel;
+      if(!label) {
+        // 代替: session に保持されたオブジェクトラベルや raw 値がある可能性
+        if(window.session && session._challengeLabel) {
+          return String(session._challengeLabel).indexOf(TARGET_LABEL_SUBSTRING) >= 0;
         }
+        return false;
       }
-
-      // 2) check session.selectedChallenge or session.challenge (possible places)
-      if(typeof session !== 'undefined' && session){
-        if(session.challenge && typeof session.challenge === 'object'){
-          if(Number(session.challenge.exponent) === CHALLENGE_EXPONENT_TARGET) { log('challenge detected via session.challenge.exponent'); return true; }
-          if(typeof session.challenge.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> session.challenge.label.indexOf(f)!==-1)){ log('challenge detected via session.challenge.label'); return true; }
-        }
-        if(session.selectedChallenge && typeof session.selectedChallenge === 'object'){
-          if(Number(session.selectedChallenge.exponent) === CHALLENGE_EXPONENT_TARGET) { log('challenge detected via session.selectedChallenge.exponent'); return true; }
-          if(typeof session.selectedChallenge.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> session.selectedChallenge.label.indexOf(f)!==-1)){ log('challenge detected via session.selectedChallenge.label'); return true; }
-        }
-      }
-
-      // 3) check DOM select element if present (challengeSelect)
-      try {
-        const el = document.getElementById('challengeSelect');
-        if(el && el.value){
-          try {
-            const parsed = JSON.parse(el.value);
-            if(parsed && (Number(parsed.exponent) === CHALLENGE_EXPONENT_TARGET || (typeof parsed.label === 'string' && CHALLENGE_LABEL_FRAGMENTS.some(f=> parsed.label.indexOf(f)!==-1)))){
-              log('challenge detected via DOM challengeSelect (parsed)'); return true;
-            }
-          } catch(e){
-            // value might be a label string
-            const v = String(el.value || '');
-            if(CHALLENGE_LABEL_FRAGMENTS.some(f => v.indexOf(f) !== -1)){ log('challenge detected via DOM challengeSelect (string)'); return true; }
-          }
-        }
-      } catch(e){
-        // ignore DOM parse errors
-      }
-
-      // 4) fallback: check save.settings.challengeMultiplierLabel raw string variations
-      if(typeof save !== 'undefined' && save && save.settings && typeof save.settings.challengeMultiplierLabel === 'string'){
-        const v = save.settings.challengeMultiplierLabel;
-        if(CHALLENGE_LABEL_FRAGMENTS.some(f => v.indexOf(f) !== -1)){ log('challenge detected via save.settings (fallback)'); return true; }
-      }
-
-      log('challenge detection: NOT matched');
+      if(typeof label === 'string' && label.indexOf(TARGET_LABEL_SUBSTRING) >= 0) return true;
+      // 完全一致候補
+      if(ACCEPTABLE_LABELS.indexOf(label) >= 0) return true;
       return false;
     } catch(e){
-      console.warn('[Part5] detectChallengeIs10e200 error', e);
+      console.warn('[Part5] isTargetChallengeSelected failed', e);
       return false;
     }
   }
 
-  // 日付判定
-  function isNowWithinRange(){
-    const now = new Date();
-    const ok = now >= RANGE_START && now <= RANGE_END;
-    log('date check', now.toISOString(), 'withinRange?', ok);
-    return ok;
-  }
-
-  // 保存フラグ確認
-  function isAlreadyUnlocked(){
+  // save 内の既存フラグチェック
+  function wasAlreadyUnlocked(){
     try {
-      if(typeof save !== 'undefined' && save && save[UNLOCK_FLAG]) return true;
-      const persisted = loadSaveSafely();
-      if(persisted && persisted[UNLOCK_FLAG]) return true;
-      return false;
+      const s = safeGetSave();
+      return !!s[UNLOCK_FLAG_KEY];
     } catch(e){
-      console.warn('[Part5] isAlreadyUnlocked error', e);
       return false;
     }
   }
 
-  // フラグをつける（保存）
-  function markAsUnlocked(){
+  // 実際にオーバーレイを開いて表示する処理（UIは既存の openOverlay を使う）
+  function showUnlockOverlay(){
     try {
-      // update in-memory save if exists
-      if(typeof save !== 'undefined' && save){
-        save[UNLOCK_FLAG] = true;
-        save[UNLOCK_TS] = Date.now();
-        try { persistSaveSafely(save); } catch(e){ /* ignore */ }
-      } else {
-        // load, set, and persist
-        const s = loadSaveSafely() || {};
-        s[UNLOCK_FLAG] = true;
-        s[UNLOCK_TS] = Date.now();
-        persistSaveSafely(s);
-      }
-      log('marked save as unlocked');
-    } catch(e){
-      console.warn('[Part5] markAsUnlocked failed', e);
-    }
-  }
-
-  // overlay 表示ユーティリティ（既存の安全な openOverlaySafe を優先して使う）
-  function showHiddenUnlockOverlay(){
-    try {
-      const builder = function(panel){
+      const builder = (panel) => {
         panel.innerHTML = '';
-        // Title / message block
-        const title = document.createElement('div'); title.style.fontWeight = '900'; title.style.fontSize = '18px';
-        title.textContent = '隠し機能を解放しました';
-        panel.appendChild(title);
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.alignItems = 'center';
+        wrap.style.justifyContent = 'center';
+        wrap.style.gap = '10px';
 
-        const msg = document.createElement('div'); msg.className = 'small'; msg.style.marginTop = '12px';
-        // Message with required line breaks
-        msg.innerText = 'あなたは隠された機能を解放し、\nこの世界の頂点に到達しました\n\nよって褒美です';
-        panel.appendChild(msg);
+        // メッセージ
+        const msgDiv = document.createElement('div');
+        msgDiv.style.whiteSpace = 'pre-line';
+        msgDiv.style.textAlign = 'center';
+        msgDiv.style.fontWeight = '900';
+        msgDiv.style.fontSize = '18px';
+        msgDiv.style.lineHeight = '1.4';
+        msgDiv.textContent = DISPLAY_LINES.join('\n');
+        wrap.appendChild(msgDiv);
 
-        // Link button (anchor) — not raw URL in text
-        const linkRow = document.createElement('div'); linkRow.style.display = 'flex'; linkRow.style.gap = '8px'; linkRow.style.marginTop = '14px';
-        const openBtn = document.createElement('a');
-        openBtn.className = 'btn';
-        openBtn.textContent = '報酬を開く';
-        openBtn.href = PART5_URL;
-        openBtn.target = '_blank';
-        openBtn.rel = 'noopener noreferrer';
-        // provide small hint note (not the URL itself)
-        const hint = document.createElement('div'); hint.className = 'small'; hint.style.marginTop = '8px'; hint.style.opacity = '0.9';
-        hint.textContent = '（別タブで報酬ページが開きます）';
-        linkRow.appendChild(openBtn);
+        // リンク（クリックで新しいタブを開く）
+        const linkWrap = document.createElement('div');
+        linkWrap.style.marginTop = '6px';
+        const linkBtn = document.createElement('a');
+        linkBtn.className = 'btn';
+        linkBtn.style.display = 'inline-block';
+        linkBtn.style.textDecoration = 'none';
+        linkBtn.style.cursor = 'pointer';
+        linkBtn.textContent = '報酬を受け取る';
+        linkBtn.href = REWARD_URL;
+        linkBtn.target = '_blank';
+        linkBtn.rel = 'noopener noreferrer';
+        linkWrap.appendChild(linkBtn);
+        wrap.appendChild(linkWrap);
 
-        // Close button
+        // 閉じるボタン
         const closeBtn = document.createElement('div');
-        closeBtn.className = 'btn secondary';
+        closeBtn.className = 'btn';
+        closeBtn.style.marginTop = '8px';
         closeBtn.textContent = '閉じる';
-        closeBtn.style.marginLeft = '8px';
-        closeBtn.onclick = function(){
-          try { if(typeof closeOverlay === 'function') closeOverlay(); } catch(e){ /* fallback below */ }
+        closeBtn.onclick = () => {
+          try { closeOverlay(); } catch(e){ /* ignore */ }
         };
-        linkRow.appendChild(closeBtn);
-        panel.appendChild(linkRow);
-        panel.appendChild(hint);
+        wrap.appendChild(closeBtn);
 
-        // Mark as unlocked now that we've shown UI (persist immediately)
-        markAsUnlocked();
+        panel.appendChild(wrap);
       };
 
-      // prefer openOverlaySafe if present (from Part4)
-      if(typeof openOverlaySafe === 'function'){
-        try {
-          openOverlaySafe('hiddenUnlock', builder);
-          return;
-        } catch(e){
-          console.warn('[Part5] openOverlaySafe threw, falling back', e);
-        }
-      }
-
-      // fallback to openOverlay if present
-      if(typeof openOverlay === 'function'){
+      // openOverlay が存在すればそれを使う（既存UIに委ねる）
+      if(typeof window.openOverlay === 'function') {
         try {
           openOverlay('hiddenUnlock', builder);
-          return;
+          log('unlock overlay shown via openOverlay');
+          return true;
         } catch(e){
           console.warn('[Part5] openOverlay threw, falling back', e);
         }
       }
+      // fallback: minimal direct overlay DOM (if ui.overlay etc. are present)
+      if(window.ui && ui.overlay && ui.overlayPanel){
+        try {
+          ui.overlay.style.display = 'flex';
+          ui.overlay.setAttribute('aria-hidden','false');
+          ui.overlayPanel.innerHTML = '';
+          builder(ui.overlayPanel);
+          return true;
+        } catch(e){
+          console.warn('[Part5] fallback overlay failed', e);
+        }
+      }
+      // どれもだめなら alert（最終手段）
+      alert(DISPLAY_LINES.join('\n') + '\n\n報酬: ' + REWARD_URL);
+      return false;
+    } catch(e){
+      console.error('[Part5] showUnlockOverlay error', e);
+      return false;
+    }
+  }
 
-      // 最終フォールバック: 手動DOM overlay（安全に作る）
+  // 判定とアンロック処理（成功したら保存フラグを立てる）
+  function tryUnlockIfEligible(context){
+    try {
+      log('tryUnlockIfEligible context:', context || {});
+      // すでにアンロック済みなら無視
+      if(wasAlreadyUnlocked()){
+        log('already unlocked; ignoring');
+        return false;
+      }
+
+      // 必要条件: onGameEnd が勝利（true）
+      // context.win may be passed; otherwise rely on argument
+      const winFlag = (typeof context === 'object' && context.win !== undefined) ? !!context.win : true;
+      if(!winFlag) { log('not a win; abort'); return false; }
+
+      // 必要条件: ステージが 30（session.currentStage）
+      if(!(window.session && session.currentStage === TARGET_STAGE)){
+        log('stage mismatch', session && session.currentStage);
+        return false;
+      }
+
+      // 必要条件: チャレンジ倍率が 10^200 系
+      if(!isTargetChallengeSelected()){
+        log('challenge mismatch; selected label:', safeGetSave() && safeGetSave().settings && safeGetSave().settings.challengeMultiplierLabel);
+        return false;
+      }
+
+      // 必要条件: 日付が 2026-02-01 .. 2026-02-15 の間
+      const now = new Date();
+      if(!inDateRange(now)){
+        log('date out of range', now);
+        return false;
+      }
+
+      // --- すべて満たした: 一度だけアンロック処理 ---
+      const s = safeGetSave();
+      s[UNLOCK_FLAG_KEY] = true;
+      s[UNLOCK_AT_KEY] = now.toISOString ? now.toISOString() : String(now.getTime());
+      safePersistSave();
+      log('hidden feature unlocked; showing overlay');
+      // show overlay (non-blocking)
       try {
-        // try to use ui.overlay/ui.overlayPanel if available
-        const ov = (window.ui && ui.overlay) ? ui.overlay : null;
-        const panel = (window.ui && ui.overlayPanel) ? ui.overlayPanel : null;
-        if(ov && panel){
-          ov.style.display = 'flex';
-          panel.innerHTML = '';
-          builder(panel);
-          return;
-        } else {
-          // as last resort, alert + confirm flow (non-ideal but safe)
-          try {
-            const proceed = confirm('隠し機能を解放しました。報酬ページを開きますか？');
-            if(proceed) window.open(PART5_URL, '_blank', 'noopener');
-            markAsUnlocked();
-            return;
-          } catch(e){
-            // ignore
-          }
-        }
+        showUnlockOverlay();
       } catch(e){
-        console.error('[Part5] final overlay fallback failed', e);
+        console.warn('[Part5] showUnlockOverlay failed', e);
       }
+      return true;
     } catch(e){
-      console.error('[Part5] showHiddenUnlockOverlay error', e);
+      console.error('[Part5] tryUnlockIfEligible failed', e);
+      return false;
     }
   }
 
-  // コア: 条件判定→表示の主処理
-  function part5_checkAndTrigger(winArg){
+  // --- onGameEnd ラッパー: オリジナルを壊さず後処理で判定 ---
+  (function wrapOnGameEnd(){
     try {
-      // only trigger on victory
-      if(!winArg) { log('not a win; skipping'); return; }
-      // date window check
-      if(!isNowWithinRange()){
-        log('outside allowed date range; skipping');
-        return;
-      }
-      // already unlocked?
-      if(isAlreadyUnlocked()){
-        log('already unlocked previously; skipping');
-        return;
-      }
-      // stage check (robust: check session.currentStage, session.currentStageNumber, save.lastStage, etc)
-      let stageOk = false;
-      if(typeof session !== 'undefined' && session && (Number(session.currentStage) === TARGET_STAGE || Number(session.stage) === TARGET_STAGE)) stageOk = true;
-      if(!stageOk){
-        // try save or other fallback fields
-        if(typeof save !== 'undefined' && save && (Number(save.lastStageCompleted) === TARGET_STAGE || Number(save.currentStage) === TARGET_STAGE)) stageOk = true;
-      }
-      if(!stageOk){
-        log('stage check failed', session && session.currentStage, save && save.currentStage);
-        return;
-      }
-      // challenge check
-      if(!detectChallengeIs10e200()){
-        log('challenge exponent check failed');
-        return;
-      }
-      // Wave / finality: We are called from onGameEnd(true) so that should be sufficient.
-      log('All checks passed — showing hidden unlock overlay');
-      // Show overlay / link
-      showHiddenUnlockOverlay();
-    } catch(e){
-      console.error('[Part5] part5_checkAndTrigger error', e);
-    }
-  }
-
-  // --- Hook onGameEnd (wrap if exists) ---
-  try {
-    const origOnGameEnd = typeof window.onGameEnd === 'function' ? window.onGameEnd : null;
-    // avoid double-wrapping
-    if(!window._part5_onGameEndPatched){
+      const orig = (typeof window.onGameEnd === 'function') ? window.onGameEnd : null;
       window.onGameEnd = function(win){
-        // call original first so game can perform its end-of-game bookkeeping / overlays
+        // call original first (preserve behavior)
         try {
-          if(typeof origOnGameEnd === 'function'){
-            try { origOnGameEnd(win); } catch(e){ console.warn('[Part5] origOnGameEnd threw', e); }
+          if(orig) orig(win);
+        } catch(e){
+          console.warn('[Part5] original onGameEnd threw', e);
+        }
+        // async-safe: 実行の安定性を高めるため少し遅延して判定（画面・session 更新が済む時間を確保）
+        setTimeout(() => {
+          try {
+            tryUnlockIfEligible({ win: !!win });
+          } catch(e){
+            console.error('[Part5] tryUnlockIfEligible threw from wrapper', e);
           }
-        } catch(e){
-          console.warn('[Part5] calling origOnGameEnd failed', e);
-        }
-        // then perform our non-intrusive check & show
-        try {
-          part5_checkAndTrigger(win);
-        } catch(e){
-          console.error('[Part5] error in part5_checkAndTrigger', e);
-        }
+        }, 120);
       };
-      window._part5_onGameEndPatched = true;
       log('onGameEnd wrapped by Part5');
-    } else {
-      log('onGameEnd already patched by Part5 (skipping wrap)');
+    } catch(e){
+      console.error('[Part5] wrapOnGameEnd failed', e);
     }
-  } catch(e){
-    console.error('[Part5] onGameEnd patching failed', e);
-  }
+  })();
 
-  // --- 小ヘルパ: 外部から手動トリガー（デバッグ用） ---
-  window._part5 = window._part5 || {};
-  window._part5.triggerManualCheck = function(forceShow){
+  // --- 開発用: 強制表示トリガー & ステータス関数 ---
+  window.part5 = window.part5 || {};
+  window.part5.debug = DEBUG;
+  window.part5.wasUnlocked = function(){ return !!(safeGetSave() && safeGetSave()[UNLOCK_FLAG_KEY]); };
+  window.part5.forceShowForDebug = function(){
+    if(!(window.session && session.currentStage)) {
+      console.warn('[part5] session not present; forcing stage=30 temporarily for debug');
+    }
+    // Temporarily ensure preconditions to allow UI test: set label and stage, but DO NOT modify save flag
+    const originalLabel = (safeGetSave() && safeGetSave().settings && save.settings.challengeMultiplierLabel) ? save.settings.challengeMultiplierLabel : null;
     try {
-      if(forceShow){
-        showHiddenUnlockOverlay();
-      } else {
-        part5_checkAndTrigger(true);
-      }
-    } catch(e){ console.error('[Part5] manual trigger failed', e); }
+      // set save setting label for UI only (do not persist)
+      save = safeGetSave();
+      save.settings = save.settings || {};
+      save.settings.challengeMultiplierLabel = '10^200 x'; // in-memory only
+      if(!session.currentStage) session.currentStage = TARGET_STAGE;
+      showUnlockOverlay();
+    } catch(e){
+      console.error('[part5] forceShowForDebug failed', e);
+    } finally {
+      if(originalLabel !== null) { save.settings.challengeMultiplierLabel = originalLabel; }
+    }
   };
-  window._part5.isUnlocked = isAlreadyUnlocked;
+  window.part5.tryUnlockIfEligible = tryUnlockIfEligible;
 
-  log('Part5 initialized (hidden unlock watcher active)');
+  // --- 最終ログ ---
+  log('Part5 initialized. Debug=', DEBUG);
 })();
 </script>
 </body>
